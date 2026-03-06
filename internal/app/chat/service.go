@@ -15,6 +15,7 @@ import (
 	appgraph "github.com/tylor/goaipj/internal/app/graph"
 	appgroup "github.com/tylor/goaipj/internal/app/group"
 	"github.com/tylor/goaipj/internal/infra/apperror"
+	"github.com/tylor/goaipj/internal/infra/observability"
 	pipelinechat "github.com/tylor/goaipj/internal/pipeline/chat"
 )
 
@@ -198,6 +199,8 @@ func (s *Service) IndexResourceChunks(ctx context.Context, input IndexChunksInpu
 }
 
 func (s *Service) SearchGroupContext(ctx context.Context, groupID, query string, topK int) ([]RetrievedChunk, error) {
+	ctx, span := startObservedSpan(ctx, "chat.context.search")
+	defer span.End()
 	if _, err := s.groups.GetGroup(ctx, groupID); err != nil {
 		return nil, apperror.New(apperror.CodeNotFound, "group not found")
 	}
@@ -339,7 +342,9 @@ func (s *Service) Ask(ctx context.Context, input AskInput) (AskResult, error) {
 		Chunks:          toPipelineChunks(contextChunks),
 		RecentMessages:  toPipelineMessages(recent),
 	}
+	ctx, span := startObservedSpan(ctx, "chat.answer.generate")
 	answer, err := s.answerer.Answer(answerInput)
+	span.End()
 	if err != nil {
 		return AskResult{}, apperror.Wrap(apperror.CodeInternal, "generate answer", err)
 	}
@@ -555,6 +560,14 @@ func recentMessages(messages []Message, limit int) []Message {
 		return append([]Message(nil), messages...)
 	}
 	return append([]Message(nil), messages[len(messages)-limit:]...)
+}
+
+func startObservedSpan(ctx context.Context, name string) (context.Context, observability.Span) {
+	tracer, ok := observability.TracerFromContext(ctx)
+	if !ok || tracer == nil {
+		tracer = observability.NewNoopTracer()
+	}
+	return tracer.Start(ctx, name)
 }
 
 func messageIDs(messages []Message) []string {

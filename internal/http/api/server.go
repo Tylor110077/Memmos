@@ -22,6 +22,7 @@ import (
 	"github.com/tylor/goaipj/internal/infra/apperror"
 	infraevent "github.com/tylor/goaipj/internal/infra/event"
 	"github.com/tylor/goaipj/internal/infra/monitoring"
+	"github.com/tylor/goaipj/internal/infra/observability"
 	"github.com/tylor/goaipj/internal/worker"
 	pipelinegraph "github.com/tylor/goaipj/internal/pipeline/graph"
 )
@@ -40,6 +41,8 @@ type Dependencies struct {
 	GraphService       *appgraph.Service
 	JobService         *appjob.Service
 	Metrics            *monitoring.Metrics
+	Tracer             observability.Tracer
+	ErrorReporter      observability.ErrorReporter
 	Readiness          []DependencyCheck
 	ResourceGraphGenerator resourceGraphGenerator
 	ResourceService    *appresource.Service
@@ -55,6 +58,8 @@ type Server struct {
 	groupService       *appgroup.Service
 	jobService         *appjob.Service
 	metrics            *monitoring.Metrics
+	tracer             observability.Tracer
+	errorReporter      observability.ErrorReporter
 	readiness          []DependencyCheck
 	resourceGraphGenerator resourceGraphGenerator
 	resourceService    *appresource.Service
@@ -239,6 +244,14 @@ func NewServer(deps Dependencies) http.Handler {
 	if eventBroker == nil {
 		eventBroker = infraevent.NewInMemoryBroker()
 	}
+	tracer := deps.Tracer
+	if tracer == nil {
+		tracer = observability.NewNoopTracer()
+	}
+	errorReporter := deps.ErrorReporter
+	if errorReporter == nil {
+		errorReporter = observability.NewNoopErrorReporter()
+	}
 	if deps.GroupService != nil {
 		deps.GroupService.SetCleanup(groupCleanup{
 			resources: deps.ResourceService,
@@ -256,6 +269,8 @@ func NewServer(deps Dependencies) http.Handler {
 		groupService:       deps.GroupService,
 		jobService:         deps.JobService,
 		metrics:            deps.Metrics,
+		tracer:             tracer,
+		errorReporter:      errorReporter,
 		readiness:          deps.Readiness,
 		resourceGraphGenerator: deps.ResourceGraphGenerator,
 		resourceService:    deps.ResourceService,
@@ -274,7 +289,7 @@ func NewServer(deps Dependencies) http.Handler {
 	mux.HandleFunc("/api/v1/graphs/", server.handleGraphsRoot)
 	mux.HandleFunc("/api/v1/jobs/", server.handleJobsRoot)
 	mux.HandleFunc("/api/v1/resources/", server.handleResourcesRoot)
-	return traceMiddleware(metricsMiddleware(server.metrics, mux))
+	return traceMiddleware(server.tracer, recoverMiddleware(server.errorReporter, metricsMiddleware(server.metrics, mux)))
 }
 
 func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {
@@ -548,10 +563,14 @@ func (s *Server) handleConversationByID(w http.ResponseWriter, r *http.Request) 
 			writeError(w, r, apperror.New(apperror.CodeInvalidArgument, "invalid json body"))
 			return
 		}
-		result, err := s.chatService.Ask(r.Context(), appchat.AskInput{
+		ctx, askSpan := startSpan(r.Context(), "chat.ask",
+			observability.Attribute{Key: "conversation_id", Value: parts[0]},
+		)
+		result, err := s.chatService.Ask(ctx, appchat.AskInput{
 			ConversationID: parts[0],
 			Content:        req.Content,
 		})
+		askSpan.End()
 		s.observeTask("chat_answer", err == nil, startedAt(r))
 		if err != nil {
 			writeError(w, r, err)
@@ -567,7 +586,7 @@ func (s *Server) handleConversationByID(w http.ResponseWriter, r *http.Request) 
 			},
 		})
 		if req.Stream {
-			s.writeConversationStream(w, result)
+			s.writeConversationStream(ctx, w, result)
 			return
 		}
 		writeJSON(w, http.StatusOK, conversationAskResponse{
@@ -680,6 +699,10 @@ func (s *Server) handleResourcesRoot(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleUploadResource(w http.ResponseWriter, r *http.Request, groupID string) {
+	ctx, span := startSpan(r.Context(), "resource.upload",
+		observability.Attribute{Key: "group_id", Value: groupID},
+	)
+	defer span.End()
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
 		writeError(w, r, apperror.New(apperror.CodeInvalidArgument, "invalid multipart form"))
 		return
@@ -697,7 +720,7 @@ func (s *Server) handleUploadResource(w http.ResponseWriter, r *http.Request, gr
 		return
 	}
 
-	result, err := s.resourceService.UploadFile(r.Context(), appresource.UploadFileInput{
+	result, err := s.resourceService.UploadFile(ctx, appresource.UploadFileInput{
 		GroupID:     groupID,
 		Filename:    header.Filename,
 		ContentType: header.Header.Get("Content-Type"),
@@ -708,7 +731,7 @@ func (s *Server) handleUploadResource(w http.ResponseWriter, r *http.Request, gr
 		writeError(w, r, err)
 		return
 	}
-	s.publishGroupEvent(r.Context(), infraevent.Envelope{
+	s.publishGroupEvent(ctx, infraevent.Envelope{
 		Name:    infraevent.NameResourceStatusChanged,
 		GroupID: result.Resource.GroupID,
 		Payload: map[string]any{
@@ -915,6 +938,10 @@ func (s *Server) handleListFrameworkGraphVersions(w http.ResponseWriter, r *http
 }
 
 func (s *Server) handleGenerateFrameworkGraph(w http.ResponseWriter, r *http.Request, groupID string) {
+	ctx, span := startSpan(r.Context(), "framework.graph.generate",
+		observability.Attribute{Key: "group_id", Value: groupID},
+	)
+	defer span.End()
 	if s.groupService == nil {
 		writeError(w, r, apperror.New(apperror.CodeInternal, "group service not configured"))
 		return
@@ -927,12 +954,12 @@ func (s *Server) handleGenerateFrameworkGraph(w http.ResponseWriter, r *http.Req
 		writeError(w, r, apperror.New(apperror.CodeInternal, "framework generator not configured"))
 		return
 	}
-	if _, err := s.groupService.GetGroup(r.Context(), groupID); err != nil {
+	if _, err := s.groupService.GetGroup(ctx, groupID); err != nil {
 		writeError(w, r, err)
 		return
 	}
 
-	resourceGraphs, err := s.graphService.ListResourceGraphsByGroup(r.Context(), groupID)
+	resourceGraphs, err := s.graphService.ListResourceGraphsByGroup(ctx, groupID)
 	if err != nil {
 		writeError(w, r, apperror.Wrap(apperror.CodeInternal, "list resource graphs", err))
 		return
@@ -945,7 +972,7 @@ func (s *Server) handleGenerateFrameworkGraph(w http.ResponseWriter, r *http.Req
 	const jobType = "generate_framework_graph"
 	dedupeKey := worker.DedupeKeyForFrameworkGraph(groupID, versionSet)
 	if s.jobService != nil {
-		if existing, ok, err := s.jobService.FindActiveJob(r.Context(), dedupeKey); err == nil && ok {
+		if existing, ok, err := s.jobService.FindActiveJob(ctx, dedupeKey); err == nil && ok {
 			writeJSON(w, http.StatusAccepted, map[string]any{
 				"group_id": groupID,
 				"job_id":   existing.ID,
@@ -957,7 +984,7 @@ func (s *Server) handleGenerateFrameworkGraph(w http.ResponseWriter, r *http.Req
 
 	var jobResult appjob.Result
 	if s.jobService != nil {
-		created, err := s.jobService.CreateQueuedJob(r.Context(), appjob.CreateQueuedJobInput{
+		created, err := s.jobService.CreateQueuedJob(ctx, appjob.CreateQueuedJobInput{
 			GroupID:       groupID,
 			JobType:       jobType,
 			QueueName:     "graph",
@@ -973,7 +1000,7 @@ func (s *Server) handleGenerateFrameworkGraph(w http.ResponseWriter, r *http.Req
 			return
 		}
 		jobResult = created
-		if _, err := s.jobService.MarkRunning(r.Context(), created.Job.ID); err != nil {
+		if _, err := s.jobService.MarkRunning(ctx, created.Job.ID); err != nil {
 			writeError(w, r, apperror.Wrap(apperror.CodeInternal, "mark framework graph job running", err))
 			return
 		}
@@ -985,27 +1012,27 @@ func (s *Server) handleGenerateFrameworkGraph(w http.ResponseWriter, r *http.Req
 	}
 	document, err := s.frameworkGenerator.Generate(documents)
 	if err != nil {
-		s.failFrameworkJob(r.Context(), jobResult.Job.ID, err)
+		s.failFrameworkJob(ctx, jobResult.Job.ID, err)
 		writeError(w, r, apperror.Wrap(apperror.CodeInternal, "generate framework graph", err))
 		return
 	}
-	saved, err := s.graphService.SaveFrameworkGraph(r.Context(), appgraph.SaveFrameworkInput{
+	saved, err := s.graphService.SaveFrameworkGraph(ctx, appgraph.SaveFrameworkInput{
 		GroupID:  groupID,
 		Title:    "Framework",
 		Document: document,
 	})
 	if err != nil {
-		s.failFrameworkJob(r.Context(), jobResult.Job.ID, err)
+		s.failFrameworkJob(ctx, jobResult.Job.ID, err)
 		writeError(w, r, apperror.Wrap(apperror.CodeInternal, "save framework graph", err))
 		return
 	}
 	if s.jobService != nil {
-		if _, err := s.jobService.MarkDone(r.Context(), jobResult.Job.ID); err != nil {
+		if _, err := s.jobService.MarkDone(ctx, jobResult.Job.ID); err != nil {
 			writeError(w, r, apperror.Wrap(apperror.CodeInternal, "mark framework graph job done", err))
 			return
 		}
 	}
-	s.publishGroupEvent(r.Context(), infraevent.Envelope{
+	s.publishGroupEvent(ctx, infraevent.Envelope{
 		Name:    "framework_graph.updated",
 		GroupID: groupID,
 		Payload: map[string]any{
@@ -1398,7 +1425,11 @@ func resourceMarkdown(resource appresource.Resource) string {
 	return "# " + resource.Name
 }
 
-func (s *Server) writeConversationStream(w http.ResponseWriter, result appchat.AskResult) {
+func (s *Server) writeConversationStream(ctx context.Context, w http.ResponseWriter, result appchat.AskResult) {
+	ctx, span := startSpan(ctx, "sse.message.stream",
+		observability.Attribute{Key: "conversation_id", Value: result.Conversation.ID},
+	)
+	defer span.End()
 	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
@@ -1469,6 +1500,15 @@ func writeSSEJSON(w http.ResponseWriter, event string, payload any) {
 
 func writeError(w http.ResponseWriter, r *http.Request, err error) {
 	traceID, _ := TraceIDFromContext(r.Context())
+	if apperror.StatusCode(err) >= http.StatusInternalServerError {
+		reportError(r.Context(), observability.ErrorReport{
+			Message: err.Error(),
+			Code:    string(apperror.CodeOf(err)),
+			TraceID: traceID,
+			Route:   routePattern(r.URL.Path),
+			At:      time.Now().UTC(),
+		})
+	}
 	resp := errorResponse{}
 	resp.Error.Code = apperror.CodeOf(err)
 	resp.Error.Message = err.Error()
@@ -1488,7 +1528,7 @@ type contextKey string
 const traceIDKey contextKey = "trace_id"
 const requestStartedAtKey contextKey = "request_started_at"
 
-func traceMiddleware(next http.Handler) http.Handler {
+func traceMiddleware(tracer observability.Tracer, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		traceID := r.Header.Get("X-Trace-ID")
 		if traceID == "" {
@@ -1496,6 +1536,13 @@ func traceMiddleware(next http.Handler) http.Handler {
 		}
 		ctx := context.WithValue(r.Context(), traceIDKey, traceID)
 		ctx = context.WithValue(ctx, requestStartedAtKey, time.Now().UTC())
+		ctx = observability.ContextWithTracer(ctx, tracer)
+		ctx, span := tracer.Start(ctx, "http.request",
+			observability.Attribute{Key: "method", Value: r.Method},
+			observability.Attribute{Key: "route", Value: routePattern(r.URL.Path)},
+			observability.Attribute{Key: "trace_id", Value: traceID},
+		)
+		defer span.End()
 		w.Header().Set("X-Trace-ID", traceID)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
@@ -1537,6 +1584,11 @@ func (s *Server) publishGroupEvent(ctx context.Context, event infraevent.Envelop
 	if s.eventBroker == nil {
 		return
 	}
+	ctx, span := startSpan(ctx, "sse.group.event",
+		observability.Attribute{Key: "event", Value: event.Name},
+		observability.Attribute{Key: "group_id", Value: event.GroupID},
+	)
+	defer span.End()
 	s.eventBroker.Publish(ctx, event)
 }
 
@@ -1631,4 +1683,40 @@ func startedAt(r *http.Request) time.Time {
 		return time.Time{}
 	}
 	return value
+}
+
+func recoverMiddleware(reporter observability.ErrorReporter, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := observability.ContextWithErrorReporter(r.Context(), reporter)
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				traceID, _ := TraceIDFromContext(ctx)
+				reportError(ctx, observability.ErrorReport{
+					Message: "panic recovered",
+					Code:    string(apperror.CodeInternal),
+					TraceID: traceID,
+					Route:   routePattern(r.URL.Path),
+					At:      time.Now().UTC(),
+				})
+				writeError(w, r.WithContext(ctx), apperror.New(apperror.CodeInternal, "internal server error"))
+			}
+		}()
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+func startSpan(ctx context.Context, name string, attrs ...observability.Attribute) (context.Context, observability.Span) {
+	tracer, ok := observability.TracerFromContext(ctx)
+	if !ok || tracer == nil {
+		tracer = observability.NewNoopTracer()
+	}
+	return tracer.Start(ctx, name, attrs...)
+}
+
+func reportError(ctx context.Context, report observability.ErrorReport) {
+	reporter, ok := observability.ErrorReporterFromContext(ctx)
+	if !ok || reporter == nil {
+		return
+	}
+	reporter.Report(ctx, report)
 }
