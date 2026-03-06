@@ -1,12 +1,19 @@
 import { apiRequest } from "@/api/client";
 import type { Paginated, ResourceDetail, ResourceMutationResult, ResourceSummary } from "@/api/types";
+import { normalizeResourceDetail, normalizeResourceSummaries } from "@/api/liveAdapters";
 
-export function getResources(groupId: string) {
-  return apiRequest<Paginated<ResourceSummary>>(`/groups/${groupId}/resources`);
+export async function getResources(groupId: string) {
+  const response = await apiRequest<Paginated<ResourceSummary> | ResourceSummary[]>(`/groups/${groupId}/resources`);
+  return normalizeResourceSummaries(response);
 }
 
-export function getResourceDetail(resourceId: string) {
-  return apiRequest<ResourceDetail>(`/resources/${resourceId}`);
+export async function getResourceDetail(resourceId: string, groupId?: string) {
+  const path =
+    import.meta.env.VITE_API_MODE === "live" && groupId
+      ? `/groups/${groupId}/resources/${resourceId}`
+      : `/resources/${resourceId}`;
+  const response = await apiRequest<ResourceDetail>(path);
+  return normalizeResourceDetail(response);
 }
 
 export function uploadResource(groupId: string, file: File, name?: string) {
@@ -16,7 +23,9 @@ export function uploadResource(groupId: string, file: File, name?: string) {
     formData.append("name", name);
   }
 
-  return apiRequest<ResourceMutationResult>(`/groups/${groupId}/resources`, {
+  const path =
+    import.meta.env.VITE_API_MODE === "live" ? `/groups/${groupId}/resources/upload` : `/groups/${groupId}/resources`;
+  return apiRequest<ResourceMutationResult>(path, {
     method: "POST",
     body: formData,
   });

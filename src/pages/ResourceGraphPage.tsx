@@ -22,7 +22,7 @@ export function ResourceGraphPage() {
   const [pendingUserMessage, setPendingUserMessage] = useState<ConversationMessage | null>(null);
   const [streamingMessage, setStreamingMessage] = useState<ConversationMessage | null>(null);
   const { pushToast } = useToast();
-  const resourceQuery = useResourceDetail(resourceId);
+  const resourceQuery = useResourceDetail(resourceId, groupId);
   useGroupEvents(groupId);
   useTrackRecentGroup(groupId);
   const { navItems: sidebarNav, recentItems } = useGroupSidebar(groupId);

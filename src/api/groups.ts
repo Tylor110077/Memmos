@@ -1,28 +1,33 @@
 import { apiRequest } from "@/api/client";
 import type { Group, GroupDetail, Paginated } from "@/api/types";
+import { normalizeGroup, normalizeGroupDetail, normalizeGroups } from "@/api/liveAdapters";
 
-export function getGroups(keyword = "") {
+export async function getGroups(keyword = "") {
   const query = new URLSearchParams({ page: "1", page_size: "20" });
   if (keyword) query.set("keyword", keyword);
-  return apiRequest<Paginated<Group>>(`/groups?${query.toString()}`);
+  const response = await apiRequest<Paginated<Group> | Group[]>(`/groups?${query.toString()}`);
+  return normalizeGroups(response);
 }
 
-export function getGroupDetail(groupId: string) {
-  return apiRequest<GroupDetail>(`/groups/${groupId}`);
+export async function getGroupDetail(groupId: string) {
+  const response = await apiRequest<GroupDetail>(`/groups/${groupId}`);
+  return normalizeGroupDetail(response);
 }
 
-export function createGroup(payload: { name: string; description?: string }) {
-  return apiRequest<Group>("/groups", {
+export async function createGroup(payload: { name: string; description?: string }) {
+  const response = await apiRequest<Group>("/groups", {
     method: "POST",
     body: JSON.stringify(payload),
   });
+  return normalizeGroup(response);
 }
 
-export function updateGroup(groupId: string, payload: { name: string; description?: string }) {
-  return apiRequest<Group>(`/groups/${groupId}`, {
+export async function updateGroup(groupId: string, payload: { name: string; description?: string }) {
+  const response = await apiRequest<Group>(`/groups/${groupId}`, {
     method: "PATCH",
     body: JSON.stringify(payload),
   });
+  return normalizeGroup(response);
 }
 
 export function deleteGroup(groupId: string) {

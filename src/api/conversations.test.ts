@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { streamConversationMessage } from "@/api/conversations";
+import { sendConversationMessage, streamConversationMessage } from "@/api/conversations";
 import type { ConversationMessage } from "@/api/types";
 
 function createStreamResponse(chunks: string[]) {
@@ -64,5 +64,52 @@ describe("streamConversationMessage", () => {
     expect(handlers.onDelta).toHaveBeenNthCalledWith(1, "先拆目标，");
     expect(handlers.onDelta).toHaveBeenNthCalledWith(2, "再调用工具。");
     expect(handlers.onDone).toHaveBeenCalledWith(message);
+  });
+
+  it("normalizes non-stream message responses", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: {
+            user_message: {
+              id: "msg_user_001",
+              conversation_id: "conv_001",
+              role: "user",
+              content: "解释一下",
+              context_snapshot: {
+                current_node_id: "root",
+              },
+              created_at: "2026-03-06T12:30:00Z",
+            },
+            assistant_message: {
+              id: "msg_assistant_001",
+              conversation_id: "conv_001",
+              role: "assistant",
+              content: "先拆目标，再调用工具。",
+              cited_chunk_ids: ["chunk_001"],
+              cited_node_ids: ["root"],
+              context_snapshot: {
+                current_node_id: "root",
+              },
+              created_at: "2026-03-06T12:32:00Z",
+            },
+          },
+          error: null,
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+          },
+        },
+      ),
+    );
+
+    const response = await sendConversationMessage("conv_001", "解释一下");
+
+    expect(response.user_message.current_node_id).toBe("root");
+    expect(response.assistant_message.citations.chunk_ids).toEqual(["chunk_001"]);
+    expect(response.assistant_message.citations.node_ids).toEqual(["root"]);
   });
 });

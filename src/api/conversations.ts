@@ -5,28 +5,36 @@ import type {
   ConversationMessage,
   SendMessageResponse,
 } from "@/api/types";
+import {
+  normalizeConversation,
+  normalizeConversationDetail,
+  normalizeMessage,
+  normalizeSendMessageResponse,
+} from "@/api/liveAdapters";
 
-export function createConversation(payload: {
+export async function createConversation(payload: {
   group_id: string;
   graph_id: string;
   current_node_id: string;
   title?: string;
 }) {
-  return apiRequest<Conversation>("/conversations", {
+  const response = await apiRequest<Conversation>("/conversations", {
     method: "POST",
     body: JSON.stringify(payload),
   });
+  return normalizeConversation(response);
 }
 
-export function getConversation(conversationId: string) {
-  return apiRequest<ConversationDetail>(`/conversations/${conversationId}`);
+export async function getConversation(conversationId: string) {
+  const response = await apiRequest<ConversationDetail>(`/conversations/${conversationId}`);
+  return normalizeConversationDetail(response);
 }
 
 export function sendConversationMessage(conversationId: string, content: string, stream = false) {
   return apiRequest<SendMessageResponse>(`/conversations/${conversationId}/messages`, {
     method: "POST",
     body: JSON.stringify({ content, stream }),
-  });
+  }).then((response) => normalizeSendMessageResponse(response));
 }
 
 export type StreamConversationHandlers = {
@@ -80,7 +88,7 @@ export async function streamConversationMessage(
 
       if (event === "message.start") handlers.onStart?.(payload.message_id);
       if (event === "message.delta") handlers.onDelta?.(payload.delta);
-      if (event === "message.done") handlers.onDone?.(payload.message);
+      if (event === "message.done") handlers.onDone?.(normalizeMessage(payload.message));
     }
   }
 }

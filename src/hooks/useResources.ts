@@ -17,10 +17,10 @@ export function useResources(groupId: string) {
   });
 }
 
-export function useResourceDetail(resourceId: string) {
+export function useResourceDetail(resourceId: string, groupId?: string) {
   return useQuery({
-    queryKey: queryKeys.resourceDetail(resourceId),
-    queryFn: () => getResourceDetail(resourceId),
+    queryKey: [...queryKeys.resourceDetail(resourceId), groupId ?? ""] as const,
+    queryFn: () => getResourceDetail(resourceId, groupId),
     enabled: Boolean(resourceId),
   });
 }
