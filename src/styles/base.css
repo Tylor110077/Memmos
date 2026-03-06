@@ -597,6 +597,14 @@ h6 {
   height: 100%;
 }
 
+.graph-flow-shell-preview {
+  min-height: 420px;
+  height: 420px;
+  border-radius: 16px;
+  overflow: hidden;
+  background: linear-gradient(180deg, #f9fbfe 0%, #f4f7fb 100%);
+}
+
 .graph-flow-shell .react-flow__panel {
   margin: 16px;
 }

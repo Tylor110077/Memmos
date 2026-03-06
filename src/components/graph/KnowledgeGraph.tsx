@@ -21,6 +21,7 @@ type KnowledgeGraphProps = {
   graph: GraphView;
   selectedNodeId?: string;
   onSelectNode?: (nodeId: string) => void;
+  variant?: "default" | "preview";
 };
 
 async function layoutGraph(graph: GraphView) {
@@ -58,7 +59,12 @@ async function layoutGraph(graph: GraphView) {
   });
 }
 
-export function KnowledgeGraph({ graph, selectedNodeId, onSelectNode }: KnowledgeGraphProps) {
+export function KnowledgeGraph({
+  graph,
+  selectedNodeId,
+  onSelectNode,
+  variant = "default",
+}: KnowledgeGraphProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [ready, setReady] = useState(false);
@@ -110,7 +116,7 @@ export function KnowledgeGraph({ graph, selectedNodeId, onSelectNode }: Knowledg
   );
 
   return (
-    <div className="graph-flow-shell" data-ready={ready}>
+    <div className={cn("graph-flow-shell", variant === "preview" && "graph-flow-shell-preview")} data-ready={ready}>
       <ReactFlow
         nodes={nodes.map((node) => ({
           ...node,
@@ -118,14 +124,19 @@ export function KnowledgeGraph({ graph, selectedNodeId, onSelectNode }: Knowledg
         }))}
         edges={edges}
         proOptions={{ hideAttribution: true }}
+        nodesDraggable={variant !== "preview"}
+        nodesConnectable={false}
+        elementsSelectable={variant !== "preview"}
+        zoomOnScroll={variant !== "preview"}
+        panOnDrag={variant !== "preview"}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onNodeClick={(_, node) => onSelectNode?.(node.id)}
         fitView
       >
         <Background color="rgba(148, 163, 184, 0.22)" gap={28} />
-        <MiniMap pannable zoomable />
-        <Controls />
+        {variant === "default" ? <MiniMap pannable zoomable /> : null}
+        {variant === "default" ? <Controls /> : null}
         <Panel position="top-left">
           <div className="graph-panel-tag">{graph.graph.summary ?? "知识图谱"}</div>
         </Panel>

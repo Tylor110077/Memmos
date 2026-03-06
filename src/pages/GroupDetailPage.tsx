@@ -180,7 +180,7 @@ export function GroupDetailPage() {
                   </div>
                 </div>
                 {frameworkQuery.data ? (
-                  <KnowledgeGraph graph={frameworkQuery.data} />
+                  <KnowledgeGraph graph={frameworkQuery.data} variant="preview" />
                 ) : (
                   <StateBlock title="框架图谱暂不可用" description="当资源达到可用状态后，系统会生成高层框架图谱。" />
                 )}
