@@ -401,16 +401,16 @@ func (s *Server) handleConversationByID(w http.ResponseWriter, r *http.Request) 
 			writeError(w, r, apperror.New(apperror.CodeInvalidArgument, "invalid json body"))
 			return
 		}
-		if req.Stream {
-			writeError(w, r, apperror.New(apperror.CodeInvalidArgument, "streaming not implemented"))
-			return
-		}
 		result, err := s.chatService.Ask(r.Context(), appchat.AskInput{
 			ConversationID: parts[0],
 			Content:        req.Content,
 		})
 		if err != nil {
 			writeError(w, r, err)
+			return
+		}
+		if req.Stream {
+			s.writeConversationStream(w, result)
 			return
 		}
 		writeJSON(w, http.StatusOK, conversationAskResponse{
@@ -757,6 +757,33 @@ func toConversationResponse(conversation appchat.Conversation) conversationRespo
 	return resp
 }
 
+func (s *Server) writeConversationStream(w http.ResponseWriter, result appchat.AskResult) {
+	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.WriteHeader(http.StatusOK)
+
+	flusher, _ := w.(http.Flusher)
+	for _, delta := range splitStreamDeltas(result.AssistantMessage.Content, 48) {
+		writeSSEJSON(w, "assistant.delta", map[string]any{
+			"conversation_id": result.Conversation.ID,
+			"delta":           delta,
+		})
+		if flusher != nil {
+			flusher.Flush()
+		}
+	}
+	writeSSEJSON(w, "assistant.message", conversationAskResponse{
+		ConversationID:   result.Conversation.ID,
+		UserMessage:      toConversationMessageResponse(result.UserMessage),
+		AssistantMessage: toConversationMessageResponse(result.AssistantMessage),
+	})
+	writeSSEJSON(w, "done", map[string]bool{"done": true})
+	if flusher != nil {
+		flusher.Flush()
+	}
+}
+
 func toConversationMessageResponse(message appchat.Message) conversationMessageResponse {
 	return conversationMessageResponse{
 		ID:             message.ID,
@@ -782,6 +809,17 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(payload)
+}
+
+func writeSSEJSON(w http.ResponseWriter, event string, payload any) {
+	_, _ = io.WriteString(w, "event: "+event+"\n")
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		raw = []byte(`{"error":"marshal_sse_payload"}`)
+	}
+	_, _ = io.WriteString(w, "data: ")
+	_, _ = w.Write(raw)
+	_, _ = io.WriteString(w, "\n\n")
 }
 
 func writeError(w http.ResponseWriter, r *http.Request, err error) {
@@ -820,4 +858,23 @@ func newTraceID() string {
 		return "trace-fallback"
 	}
 	return hex.EncodeToString(raw[:])
+}
+
+func splitStreamDeltas(content string, chunkSize int) []string {
+	if chunkSize <= 0 {
+		chunkSize = 32
+	}
+	runes := []rune(content)
+	if len(runes) == 0 {
+		return nil
+	}
+	out := make([]string, 0, (len(runes)+chunkSize-1)/chunkSize)
+	for start := 0; start < len(runes); start += chunkSize {
+		end := start + chunkSize
+		if end > len(runes) {
+			end = len(runes)
+		}
+		out = append(out, string(runes[start:end]))
+	}
+	return out
 }

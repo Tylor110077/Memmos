@@ -116,21 +116,33 @@ type Answerer interface {
 	Answer(input pipelinechat.Input) (pipelinechat.Output, error)
 }
 
+type Embedder interface {
+	EmbedTexts(ctx context.Context, texts []string) ([][]float64, error)
+}
+
 type Service struct {
 	groups        GroupLookup
 	graphs        GraphLookup
 	chunks        ChunkRepository
 	conversations ConversationRepository
 	answerer      Answerer
+	embedder      Embedder
 }
 
-func NewService(groups GroupLookup, graphs GraphLookup, chunks ChunkRepository, conversations ConversationRepository, answerer Answerer) *Service {
+func NewService(groups GroupLookup, graphs GraphLookup, chunks ChunkRepository, conversations ConversationRepository, answerer Answerer, embedder Embedder) *Service {
+	if answerer == nil {
+		answerer = pipelinechat.NewAnswerer()
+	}
+	if embedder == nil {
+		embedder = deterministicEmbedder{}
+	}
 	return &Service{
 		groups:        groups,
 		graphs:        graphs,
 		chunks:        chunks,
 		conversations: conversations,
 		answerer:      answerer,
+		embedder:      embedder,
 	}
 }
 
@@ -147,11 +159,13 @@ func (s *Service) IndexResourceChunks(ctx context.Context, input IndexChunksInpu
 
 	now := time.Now().UTC()
 	indexed := make([]Chunk, 0, len(input.Chunks))
+	texts := make([]string, 0, len(input.Chunks))
 	for idx, content := range input.Chunks {
 		trimmed := strings.TrimSpace(content)
 		if trimmed == "" {
 			continue
 		}
+		texts = append(texts, trimmed)
 		indexed = append(indexed, Chunk{
 			ID:         newID(),
 			GroupID:    input.GroupID,
@@ -159,12 +173,21 @@ func (s *Service) IndexResourceChunks(ctx context.Context, input IndexChunksInpu
 			ChunkIndex: idx,
 			Content:    trimmed,
 			Summary:    summarize(trimmed),
-			Embedding:  embedText(trimmed),
 			CreatedAt:  now,
 		})
 	}
 	if len(indexed) == 0 {
 		return nil, apperror.New(apperror.CodeInvalidArgument, "chunks are required")
+	}
+	embeddings, err := s.embedder.EmbedTexts(ctx, texts)
+	if err != nil {
+		return nil, apperror.Wrap(apperror.CodeInternal, "embed chunks", err)
+	}
+	if len(embeddings) != len(indexed) {
+		return nil, apperror.New(apperror.CodeInternal, "embedding count mismatch")
+	}
+	for i := range indexed {
+		indexed[i].Embedding = embeddings[i]
 	}
 	if err := s.chunks.ReplaceForResource(ctx, input.GroupID, input.ResourceID, indexed); err != nil {
 		return nil, apperror.Wrap(apperror.CodeInternal, "index resource chunks", err)
@@ -188,7 +211,14 @@ func (s *Service) SearchGroupContext(ctx context.Context, groupID, query string,
 	if err != nil {
 		return nil, apperror.Wrap(apperror.CodeInternal, "list chunks", err)
 	}
-	queryVector := embedText(trimmed)
+	queryVectors, err := s.embedder.EmbedTexts(ctx, []string{trimmed})
+	if err != nil {
+		return nil, apperror.Wrap(apperror.CodeInternal, "embed query", err)
+	}
+	if len(queryVectors) != 1 {
+		return nil, apperror.New(apperror.CodeInternal, "query embedding missing")
+	}
+	queryVector := queryVectors[0]
 	results := make([]RetrievedChunk, 0, len(items))
 	for _, item := range items {
 		results = append(results, RetrievedChunk{
@@ -504,6 +534,16 @@ func summarize(text string) string {
 		return strings.Join(words, " ")
 	}
 	return strings.Join(words[:18], " ") + "..."
+}
+
+type deterministicEmbedder struct{}
+
+func (deterministicEmbedder) EmbedTexts(_ context.Context, texts []string) ([][]float64, error) {
+	out := make([][]float64, 0, len(texts))
+	for _, text := range texts {
+		out = append(out, embedText(text))
+	}
+	return out, nil
 }
 
 func embedText(text string) []float64 {

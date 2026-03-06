@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"net/http"
+	"strings"
 	"testing"
 
 	appchat "github.com/tylor/goaipj/internal/app/chat"
@@ -12,7 +13,7 @@ import (
 	pipelinegraph "github.com/tylor/goaipj/internal/pipeline/graph"
 )
 
-func TestConversationEndpoints(t *testing.T) {
+func TestConversationMessageStreamEndpoint(t *testing.T) {
 	groupService := appgroup.NewService(appgroup.NewInMemoryRepository())
 	group, err := groupService.CreateGroup(context.Background(), appgroup.CreateGroupInput{Name: "Backend"})
 	if err != nil {
@@ -77,35 +78,27 @@ func TestConversationEndpoints(t *testing.T) {
 	if createResp.Code != http.StatusCreated {
 		t.Fatalf("create status = %d body=%s", createResp.Code, createResp.Body.String())
 	}
-
 	var created conversationResponse
 	decodeJSONResponse(t, createResp, &created)
 
-	messageResp := performJSONRequest(t, server, http.MethodPost, "/api/v1/conversations/"+created.ID+"/messages", map[string]any{
+	streamResp := performJSONRequest(t, server, http.MethodPost, "/api/v1/conversations/"+created.ID+"/messages", map[string]any{
 		"content": "这个节点的作用是什么？",
-		"stream":  false,
+		"stream":  true,
 	})
-	if messageResp.Code != http.StatusOK {
-		t.Fatalf("message status = %d body=%s", messageResp.Code, messageResp.Body.String())
+	if streamResp.Code != http.StatusOK {
+		t.Fatalf("stream status = %d body=%s", streamResp.Code, streamResp.Body.String())
 	}
-
-	var asked conversationAskResponse
-	decodeJSONResponse(t, messageResp, &asked)
-	if asked.AssistantMessage.Content == "" {
-		t.Fatalf("expected assistant answer")
+	if contentType := streamResp.Header().Get("Content-Type"); !strings.Contains(contentType, "text/event-stream") {
+		t.Fatalf("content-type = %q, want text/event-stream", contentType)
 	}
-	if len(asked.AssistantMessage.CitedChunkIDs) == 0 {
-		t.Fatalf("expected cited chunks")
+	body := streamResp.Body.String()
+	if !strings.Contains(body, "event: assistant.delta") {
+		t.Fatalf("expected assistant.delta events, body=%s", body)
 	}
-
-	getResp := performJSONRequest(t, server, http.MethodGet, "/api/v1/conversations/"+created.ID, nil)
-	if getResp.Code != http.StatusOK {
-		t.Fatalf("get status = %d body=%s", getResp.Code, getResp.Body.String())
+	if !strings.Contains(body, "event: assistant.message") {
+		t.Fatalf("expected assistant.message event, body=%s", body)
 	}
-
-	var stored conversationResponse
-	decodeJSONResponse(t, getResp, &stored)
-	if len(stored.Messages) != 2 {
-		t.Fatalf("len(messages) = %d, want 2", len(stored.Messages))
+	if !strings.Contains(body, "event: done") {
+		t.Fatalf("expected done event, body=%s", body)
 	}
 }

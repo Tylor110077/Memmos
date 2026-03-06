@@ -17,7 +17,7 @@ func TestIndexAndSearchGroupContext(t *testing.T) {
 		t.Fatalf("CreateGroup() error = %v", err)
 	}
 
-	service := NewService(groupService, appgraph.NewService(appgraph.NewInMemoryRepository()), NewInMemoryChunkRepository(), NewInMemoryConversationRepository(), pipelinechat.NewAnswerer())
+	service := NewService(groupService, appgraph.NewService(appgraph.NewInMemoryRepository()), NewInMemoryChunkRepository(), NewInMemoryConversationRepository(), pipelinechat.NewAnswerer(), nil)
 
 	indexed, err := service.IndexResourceChunks(context.Background(), IndexChunksInput{
 		GroupID:    group.ID,
@@ -82,7 +82,7 @@ func TestConversationAskStoresHistoryAndCitations(t *testing.T) {
 		Content: "A PDF is parsed into markdown before graph generation.",
 	})
 
-	service := NewService(groupService, graphService, NewInMemoryChunkRepository(), NewInMemoryConversationRepository(), pipelinechat.NewAnswerer())
+	service := NewService(groupService, graphService, NewInMemoryChunkRepository(), NewInMemoryConversationRepository(), pipelinechat.NewAnswerer(), nil)
 	if _, err := service.IndexResourceChunks(context.Background(), IndexChunksInput{
 		GroupID:    group.ID,
 		ResourceID: saved.Graph.ResourceID,
