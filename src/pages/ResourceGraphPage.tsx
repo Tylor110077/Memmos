@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { useToast } from "@/components/feedback/ToastProvider";
 import { AppChrome } from "@/components/layout/AppChrome";
+import { Breadcrumbs } from "@/components/layout/Breadcrumbs";
 import { KnowledgeGraph } from "@/components/graph/KnowledgeGraph";
 import { Button } from "@/components/ui/Button";
 import { StateBlock } from "@/components/ui/StateBlock";
@@ -13,6 +15,7 @@ export function ResourceGraphPage() {
   const { groupId = "", resourceId = "" } = useParams();
   const [draft, setDraft] = useState("");
   const [conversationId, setConversationId] = useState<string>("conv_loop");
+  const { pushToast } = useToast();
   const resourceQuery = useResourceDetail(resourceId);
   const { selectedNodeId, includeExpansion, maxLevel, setSelectedNodeId, setIncludeExpansion, setMaxLevel, reset } =
     useGraphWorkbenchStore();
@@ -70,6 +73,7 @@ export function ResourceGraphPage() {
     }
     await sendMessage.mutateAsync(draft.trim());
     setDraft("");
+    pushToast({ title: "问题已发送", description: "回答已围绕当前节点刷新。", tone: "success" });
   }
 
   if (resource?.status === "failed") {
@@ -140,6 +144,13 @@ export function ResourceGraphPage() {
         <>
           <header className="topbar">
             <div>
+              <Breadcrumbs
+                items={[
+                  { label: "分组列表", to: "/groups" },
+                  { label: "分组详情", to: `/groups/${groupId}` },
+                  { label: resource?.name ?? "资源图谱" },
+                ]}
+              />
               <p className="eyebrow">Resource Graph</p>
               <h3>资源级知识图谱</h3>
               <p className="body-copy">当前资源：{resource?.name}</p>
@@ -220,6 +231,12 @@ export function ResourceGraphPage() {
                 <div key={message.id} className={`chat-msg ${message.role === "user" ? "user" : "ai"}`}>
                   <span className="role">{message.role === "assistant" ? "助理" : message.role === "system" ? "系统" : "你"}</span>
                   <p>{message.content}</p>
+                  {message.role === "assistant" && (message.citations.node_ids.length > 0 || message.citations.chunk_ids.length > 0) ? (
+                    <div className="citation-row">
+                      {message.citations.node_ids.length > 0 ? <span>引用节点 {message.citations.node_ids.length}</span> : null}
+                      {message.citations.chunk_ids.length > 0 ? <span>引用片段 {message.citations.chunk_ids.length}</span> : null}
+                    </div>
+                  ) : null}
                 </div>
               ))}
             </div>

@@ -3,6 +3,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it } from "vitest";
+import { ToastProvider } from "@/components/feedback/ToastProvider";
 import { ResourceGraphPage } from "@/pages/ResourceGraphPage";
 
 function renderPage() {
@@ -12,11 +13,13 @@ function renderPage() {
 
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={["/groups/grp_agent/resources/res_cookbook/graph"]}>
-        <Routes>
-          <Route path="/groups/:groupId/resources/:resourceId/graph" element={<ResourceGraphPage />} />
-        </Routes>
-      </MemoryRouter>
+      <ToastProvider>
+        <MemoryRouter initialEntries={["/groups/grp_agent/resources/res_cookbook/graph"]}>
+          <Routes>
+            <Route path="/groups/:groupId/resources/:resourceId/graph" element={<ResourceGraphPage />} />
+          </Routes>
+        </MemoryRouter>
+      </ToastProvider>
     </QueryClientProvider>,
   );
 }

@@ -3,6 +3,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
+import { ToastProvider } from "@/components/feedback/ToastProvider";
 import { GroupsPage } from "@/pages/GroupsPage";
 
 function renderPage() {
@@ -12,9 +13,11 @@ function renderPage() {
 
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter>
-        <GroupsPage />
-      </MemoryRouter>
+      <ToastProvider>
+        <MemoryRouter>
+          <GroupsPage />
+        </MemoryRouter>
+      </ToastProvider>
     </QueryClientProvider>,
   );
 }

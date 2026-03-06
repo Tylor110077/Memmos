@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { useToast } from "@/components/feedback/ToastProvider";
 import { AppChrome } from "@/components/layout/AppChrome";
+import { Breadcrumbs } from "@/components/layout/Breadcrumbs";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { StateBlock } from "@/components/ui/StateBlock";
@@ -21,6 +23,7 @@ export function GroupsPage() {
   const [deleteGroupId, setDeleteGroupId] = useState<string>();
   const [form, setForm] = useState<GroupFormState>(emptyForm);
   const [errorMessage, setErrorMessage] = useState("");
+  const { pushToast } = useToast();
 
   const groupsQuery = useGroups(keyword);
   const createGroup = useCreateGroup();
@@ -61,6 +64,7 @@ export function GroupsPage() {
       await createGroup.mutateAsync({ name: form.name.trim(), description: form.description.trim() || undefined });
       setCreateOpen(false);
       setForm(emptyForm);
+      pushToast({ title: "分组已创建", description: "新的学习分组已经加入列表。", tone: "success" });
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "创建失败");
     }
@@ -73,6 +77,7 @@ export function GroupsPage() {
       await updateGroup.mutateAsync({ name: form.name.trim(), description: form.description.trim() || undefined });
       setRenameGroupId(undefined);
       setForm(emptyForm);
+      pushToast({ title: "分组已更新", description: "名称和描述已经同步刷新。", tone: "success" });
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "更新失败");
     }
@@ -82,6 +87,7 @@ export function GroupsPage() {
     if (!deleteGroupId) return;
     await deleteGroup.mutateAsync(deleteGroupId);
     setDeleteGroupId(undefined);
+    pushToast({ title: "分组已删除", description: "列表已经移除对应项目。", tone: "info" });
   }
 
   return (
@@ -93,6 +99,7 @@ export function GroupsPage() {
           <>
             <header className="topbar">
               <div>
+                <Breadcrumbs items={[{ label: "学习知识图谱助手" }, { label: "分组列表" }]} />
                 <p className="eyebrow">Project Spaces</p>
                 <h3>分组列表</h3>
               </div>

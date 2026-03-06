@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { useToast } from "@/components/feedback/ToastProvider";
 import { AppChrome } from "@/components/layout/AppChrome";
+import { Breadcrumbs } from "@/components/layout/Breadcrumbs";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { KnowledgeGraph } from "@/components/graph/KnowledgeGraph";
@@ -26,6 +28,7 @@ export function GroupDetailPage() {
   const [webUrl, setWebUrl] = useState("");
   const [webName, setWebName] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  const { pushToast } = useToast();
 
   const groupQuery = useGroupDetail(groupId);
   const resourcesQuery = useResources(groupId);
@@ -60,6 +63,7 @@ export function GroupDetailPage() {
     setSelectedFile(undefined);
     setResourceName("");
     setErrorMessage("");
+    pushToast({ title: "资源已上传", description: "资源已进入异步处理流程。", tone: "success" });
   }
 
   async function handleWebSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -78,6 +82,7 @@ export function GroupDetailPage() {
     setWebUrl("");
     setWebName("");
     setErrorMessage("");
+    pushToast({ title: "网页资源已创建", description: "系统会提取正文并生成图谱。", tone: "success" });
   }
 
   return (
@@ -88,6 +93,7 @@ export function GroupDetailPage() {
           <>
             <header className="topbar split">
               <div>
+                <Breadcrumbs items={[{ label: "分组列表", to: "/groups" }, { label: group?.name ?? "当前分组" }]} />
                 <p className="eyebrow">Group Detail</p>
                 <h3>{group?.name ?? "加载中..."}</h3>
                 <p className="body-copy">{group?.description}</p>
@@ -164,7 +170,7 @@ export function GroupDetailPage() {
                   <h4>分组级框架图谱预览</h4>
                   <div className="topbar-actions">
                     <Button variant="ghost" onClick={() => regenerateMutation.mutate()}>
-                      重新生成
+                      {regenerateMutation.isPending ? "生成中..." : "重新生成"}
                     </Button>
                     <Link className="inline-link" to={`/groups/${groupId}/framework`}>
                       进入完整画布
