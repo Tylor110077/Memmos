@@ -94,6 +94,7 @@ type Repository interface {
 	ListFrameworkGraphVersions(ctx context.Context, groupID string) ([]SavedGraph, error)
 	ListExamples(ctx context.Context, graphID string, nodeID string) ([]Example, error)
 	DeleteResourceGraphs(ctx context.Context, resourceID string) error
+	DeleteGroupGraphs(ctx context.Context, groupID string) error
 }
 
 type Service struct {
@@ -319,6 +320,10 @@ func (s *Service) ListResourceGraphsByGroup(ctx context.Context, groupID string)
 
 func (s *Service) DeleteResourceGraphs(ctx context.Context, resourceID string) error {
 	return s.repo.DeleteResourceGraphs(ctx, resourceID)
+}
+
+func (s *Service) DeleteGroupGraphs(ctx context.Context, groupID string) error {
+	return s.repo.DeleteGroupGraphs(ctx, groupID)
 }
 
 func (s *Service) ListResourceGraphVersions(ctx context.Context, resourceID string) ([]SavedGraph, error) {
@@ -547,6 +552,21 @@ func (r *InMemoryRepository) DeleteResourceGraphs(_ context.Context, resourceID 
 	defer r.mu.Unlock()
 	for graphID, graph := range r.graphs {
 		if graph.Graph.ResourceID != resourceID {
+			continue
+		}
+		delete(r.graphs, graphID)
+		for _, node := range graph.Nodes {
+			delete(r.examples, graphID+":"+node.ID)
+		}
+	}
+	return nil
+}
+
+func (r *InMemoryRepository) DeleteGroupGraphs(_ context.Context, groupID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for graphID, graph := range r.graphs {
+		if graph.Graph.GroupID != groupID {
 			continue
 		}
 		delete(r.graphs, graphID)

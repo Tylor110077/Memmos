@@ -22,6 +22,7 @@ import (
 	"github.com/tylor/goaipj/internal/infra/apperror"
 	infraevent "github.com/tylor/goaipj/internal/infra/event"
 	"github.com/tylor/goaipj/internal/infra/monitoring"
+	"github.com/tylor/goaipj/internal/worker"
 	pipelinegraph "github.com/tylor/goaipj/internal/pipeline/graph"
 )
 
@@ -237,6 +238,14 @@ func NewServer(deps Dependencies) http.Handler {
 	eventBroker := deps.EventBroker
 	if eventBroker == nil {
 		eventBroker = infraevent.NewInMemoryBroker()
+	}
+	if deps.GroupService != nil {
+		deps.GroupService.SetCleanup(groupCleanup{
+			resources: deps.ResourceService,
+			graphs:    deps.GraphService,
+			chat:      deps.ChatService,
+			jobs:      deps.JobService,
+		})
 	}
 	server := &Server{
 		expansionGenerator: deps.ExpansionGenerator,
@@ -923,8 +932,18 @@ func (s *Server) handleGenerateFrameworkGraph(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	resourceGraphs, err := s.graphService.ListResourceGraphsByGroup(r.Context(), groupID)
+	if err != nil {
+		writeError(w, r, apperror.Wrap(apperror.CodeInternal, "list resource graphs", err))
+		return
+	}
+	versionSet := make([]string, 0, len(resourceGraphs))
+	for _, graph := range resourceGraphs {
+		versionSet = append(versionSet, graph.Graph.ResourceID+"@"+strconv.Itoa(graph.Graph.Version))
+	}
+
 	const jobType = "generate_framework_graph"
-	dedupeKey := groupID + ":" + jobType
+	dedupeKey := worker.DedupeKeyForFrameworkGraph(groupID, versionSet)
 	if s.jobService != nil {
 		if existing, ok, err := s.jobService.FindActiveJob(r.Context(), dedupeKey); err == nil && ok {
 			writeJSON(w, http.StatusAccepted, map[string]any{
@@ -945,7 +964,8 @@ func (s *Server) handleGenerateFrameworkGraph(w http.ResponseWriter, r *http.Req
 			MaxAttempts:   3,
 			Deduplication: dedupeKey,
 			Payload: map[string]any{
-				"group_id": groupID,
+				"group_id":                groupID,
+				"resource_graph_versions": versionSet,
 			},
 		})
 		if err != nil {
@@ -959,12 +979,6 @@ func (s *Server) handleGenerateFrameworkGraph(w http.ResponseWriter, r *http.Req
 		}
 	}
 
-	resourceGraphs, err := s.graphService.ListResourceGraphsByGroup(r.Context(), groupID)
-	if err != nil {
-		s.failFrameworkJob(r.Context(), jobResult.Job.ID, err)
-		writeError(w, r, apperror.Wrap(apperror.CodeInternal, "list resource graphs", err))
-		return
-	}
 	documents := make([]pipelinegraph.Document, 0, len(resourceGraphs))
 	for _, graph := range resourceGraphs {
 		documents = append(documents, toFrameworkSourceDocument(graph))

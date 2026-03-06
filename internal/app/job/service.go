@@ -78,6 +78,7 @@ type Repository interface {
 	ListJobs(ctx context.Context) ([]Job, error)
 	CreateEvent(ctx context.Context, event Event) error
 	ListEvents(ctx context.Context, jobID string) ([]Event, error)
+	DeleteByGroup(ctx context.Context, groupID string) error
 }
 
 type Service struct {
@@ -192,6 +193,10 @@ func (s *Service) ResumeJob(ctx context.Context, jobID string) (Result, error) {
 	})
 }
 
+func (s *Service) DeleteGroupJobs(ctx context.Context, groupID string) error {
+	return s.repo.DeleteByGroup(ctx, groupID)
+}
+
 func (s *Service) transition(ctx context.Context, jobID string, status Status, eventType EventType, message string, mutate func(job *Job, now time.Time)) (Result, error) {
 	job, err := s.repo.GetJob(ctx, jobID)
 	if err != nil {
@@ -283,6 +288,19 @@ func (r *InMemoryRepository) ListEvents(_ context.Context, jobID string) ([]Even
 	items := append([]Event(nil), r.events[jobID]...)
 	sort.Slice(items, func(i, j int) bool { return items[i].CreatedAt.Before(items[j].CreatedAt) })
 	return items, nil
+}
+
+func (r *InMemoryRepository) DeleteByGroup(_ context.Context, groupID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for jobID, job := range r.jobs {
+		if job.GroupID != groupID {
+			continue
+		}
+		delete(r.jobs, jobID)
+		delete(r.events, jobID)
+	}
+	return nil
 }
 
 func newID() string {

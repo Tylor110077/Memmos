@@ -8,6 +8,7 @@ import (
 	appgraph "github.com/tylor/goaipj/internal/app/graph"
 	appgroup "github.com/tylor/goaipj/internal/app/group"
 	appjob "github.com/tylor/goaipj/internal/app/job"
+	"github.com/tylor/goaipj/internal/worker"
 	pipelinegraph "github.com/tylor/goaipj/internal/pipeline/graph"
 )
 
@@ -121,11 +122,11 @@ func TestFrameworkGraphGenerateEndpointReturnsExistingRunningJob(t *testing.T) {
 
 	jobService := appjob.NewService(appjob.NewInMemoryRepository())
 	created, err := jobService.CreateQueuedJob(context.Background(), appjob.CreateQueuedJobInput{
-		GroupID:      group.ID,
-		JobType:      "generate_framework_graph",
-		QueueName:    "graph",
-		MaxAttempts:  3,
-		Deduplication: group.ID + ":generate_framework_graph",
+		GroupID:       group.ID,
+		JobType:       "generate_framework_graph",
+		QueueName:     "graph",
+		MaxAttempts:   3,
+		Deduplication: worker.DedupeKeyForFrameworkGraph(group.ID, nil),
 	})
 	if err != nil {
 		t.Fatalf("CreateQueuedJob() error = %v", err)

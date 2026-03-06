@@ -9,10 +9,14 @@ import (
 	"strings"
 	"testing"
 
+	appchat "github.com/tylor/goaipj/internal/app/chat"
+	appgraph "github.com/tylor/goaipj/internal/app/graph"
 	appgroup "github.com/tylor/goaipj/internal/app/group"
+	appjob "github.com/tylor/goaipj/internal/app/job"
 	appresource "github.com/tylor/goaipj/internal/app/resource"
 	domainresource "github.com/tylor/goaipj/internal/domain/resource"
 	"github.com/tylor/goaipj/internal/infra/storage"
+	pipelinegraph "github.com/tylor/goaipj/internal/pipeline/graph"
 )
 
 func TestGroupsCRUD(t *testing.T) {
@@ -155,6 +159,126 @@ func TestGroupsValidationAndErrorShape(t *testing.T) {
 	}
 	if !strings.Contains(resp.Body.String(), `"trace_id"`) {
 		t.Fatalf("expected trace id")
+	}
+}
+
+func TestDeleteGroupCascadesAssociatedData(t *testing.T) {
+	ctx := context.Background()
+	groupService := appgroup.NewService(appgroup.NewInMemoryRepository())
+	group, err := groupService.CreateGroup(ctx, appgroup.CreateGroupInput{Name: "Cascade Group"})
+	if err != nil {
+		t.Fatalf("CreateGroup() error = %v", err)
+	}
+
+	resourceService := appresource.NewService(
+		groupService,
+		appresource.NewInMemoryRepository(),
+		appresource.NewInMemoryArtifactRepository(),
+		appresource.NewInMemoryJobPublisher(),
+		storage.NewStore(newHTTPFakeBucketClient(), "bucket"),
+	)
+	graphService := appgraph.NewService(appgraph.NewInMemoryRepository())
+	chatService := appchat.NewService(
+		groupService,
+		graphService,
+		appchat.NewInMemoryChunkRepository(),
+		appchat.NewInMemoryConversationRepository(),
+		nil,
+		nil,
+	)
+	jobService := appjob.NewService(appjob.NewInMemoryRepository())
+
+	resourceResult, err := resourceService.CreateWebResource(ctx, appresource.CreateWebResourceInput{
+		GroupID: group.ID,
+		URL:     "https://example.com/resource",
+		Name:    "Resource",
+	})
+	if err != nil {
+		t.Fatalf("CreateWebResource() error = %v", err)
+	}
+	resourceID := resourceResult.Resource.ID
+
+	resourceGraph, err := graphService.SaveResourceGraph(ctx, appgraph.SaveInput{
+		GroupID:    group.ID,
+		ResourceID: resourceID,
+		Title:      "Resource Graph",
+		Document: pipelinegraph.Document{
+			Summary: "resource summary",
+			Nodes: []pipelinegraph.Node{
+				{ID: "root", Name: "Root", Type: "topic", Level: 0},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("SaveResourceGraph() error = %v", err)
+	}
+	if _, err := graphService.SaveFrameworkGraph(ctx, appgraph.SaveFrameworkInput{
+		GroupID: group.ID,
+		Title:   "Framework",
+		Document: pipelinegraph.Document{
+			Summary: "framework summary",
+			Nodes: []pipelinegraph.Node{
+				{ID: "framework-root", Name: "Framework Root", Type: "topic", Level: 0},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("SaveFrameworkGraph() error = %v", err)
+	}
+
+	if _, err := chatService.IndexResourceChunks(ctx, appchat.IndexChunksInput{
+		GroupID:    group.ID,
+		ResourceID: resourceID,
+		Chunks:     []string{"chunk one"},
+	}); err != nil {
+		t.Fatalf("IndexResourceChunks() error = %v", err)
+	}
+	conversation, err := chatService.CreateConversation(ctx, appchat.CreateConversationInput{
+		GroupID:       group.ID,
+		GraphID:       resourceGraph.Graph.ID,
+		CurrentNodeID: "root",
+		Title:         "Conversation",
+	})
+	if err != nil {
+		t.Fatalf("CreateConversation() error = %v", err)
+	}
+
+	jobResult, err := jobService.CreateQueuedJob(ctx, appjob.CreateQueuedJobInput{
+		GroupID:    group.ID,
+		ResourceID: resourceID,
+		JobType:    "generate_framework_graph",
+		QueueName:  "graph",
+	})
+	if err != nil {
+		t.Fatalf("CreateQueuedJob() error = %v", err)
+	}
+
+	server := NewServer(Dependencies{
+		ChatService:     chatService,
+		GraphService:    graphService,
+		GroupService:    groupService,
+		JobService:      jobService,
+		ResourceService: resourceService,
+	})
+
+	deleteResp := performJSONRequest(t, server, http.MethodDelete, "/api/v1/groups/"+group.ID, nil)
+	if deleteResp.Code != http.StatusNoContent {
+		t.Fatalf("delete status = %d body=%s", deleteResp.Code, deleteResp.Body.String())
+	}
+
+	if resources, err := resourceService.ListResources(ctx, group.ID); err != nil || len(resources) != 0 {
+		t.Fatalf("resources after delete = %d err=%v, want 0", len(resources), err)
+	}
+	if graph, err := graphService.GetResourceGraph(ctx, resourceID, appgraph.QueryOptions{IncludeExpansion: true}); err != nil || graph.Graph.ID != "" {
+		t.Fatalf("resource graph after delete = %#v err=%v, want empty", graph.Graph, err)
+	}
+	if graph, err := graphService.GetFrameworkGraph(ctx, group.ID, appgraph.QueryOptions{IncludeExpansion: true}); err != nil || graph.Graph.ID != "" {
+		t.Fatalf("framework graph after delete = %#v err=%v, want empty", graph.Graph, err)
+	}
+	if _, err := chatService.GetConversation(ctx, conversation.ID); err == nil {
+		t.Fatalf("expected conversation removed")
+	}
+	if _, err := jobService.GetJob(ctx, jobResult.Job.ID); err == nil {
+		t.Fatalf("expected job removed")
 	}
 }
 

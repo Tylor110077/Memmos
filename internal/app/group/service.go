@@ -38,12 +38,28 @@ type Repository interface {
 	ExistsByName(ctx context.Context, name string, excludeID string) (bool, error)
 }
 
-type Service struct {
-	repo Repository
+type Cleanup interface {
+	DeleteGroupResources(ctx context.Context, groupID string) error
+	DeleteGroupGraphs(ctx context.Context, groupID string) error
+	DeleteGroupConversations(ctx context.Context, groupID string) error
+	DeleteGroupJobs(ctx context.Context, groupID string) error
 }
 
-func NewService(repo Repository) *Service {
-	return &Service{repo: repo}
+type Service struct {
+	repo    Repository
+	cleanup Cleanup
+}
+
+func NewService(repo Repository, cleanup ...Cleanup) *Service {
+	svc := &Service{repo: repo}
+	if len(cleanup) > 0 {
+		svc.cleanup = cleanup[0]
+	}
+	return svc
+}
+
+func (s *Service) SetCleanup(cleanup Cleanup) {
+	s.cleanup = cleanup
 }
 
 func (s *Service) CreateGroup(ctx context.Context, input CreateGroupInput) (Group, error) {
@@ -113,6 +129,23 @@ func (s *Service) UpdateGroup(ctx context.Context, id string, input UpdateGroupI
 }
 
 func (s *Service) DeleteGroup(ctx context.Context, id string) error {
+	if _, err := s.repo.Get(ctx, id); err != nil {
+		return mapRepositoryError(err, "get group")
+	}
+	if s.cleanup != nil {
+		if err := s.cleanup.DeleteGroupResources(ctx, id); err != nil {
+			return apperror.Wrap(apperror.CodeInternal, "delete group resources", err)
+		}
+		if err := s.cleanup.DeleteGroupGraphs(ctx, id); err != nil {
+			return apperror.Wrap(apperror.CodeInternal, "delete group graphs", err)
+		}
+		if err := s.cleanup.DeleteGroupConversations(ctx, id); err != nil {
+			return apperror.Wrap(apperror.CodeInternal, "delete group conversations", err)
+		}
+		if err := s.cleanup.DeleteGroupJobs(ctx, id); err != nil {
+			return apperror.Wrap(apperror.CodeInternal, "delete group jobs", err)
+		}
+	}
 	if err := s.repo.Delete(ctx, id); err != nil {
 		return mapRepositoryError(err, "delete group")
 	}

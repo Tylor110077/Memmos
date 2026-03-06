@@ -104,12 +104,14 @@ type GraphLookup interface {
 type ChunkRepository interface {
 	ReplaceForResource(ctx context.Context, groupID, resourceID string, chunks []Chunk) error
 	ListByGroup(ctx context.Context, groupID string) ([]Chunk, error)
+	DeleteByGroup(ctx context.Context, groupID string) error
 }
 
 type ConversationRepository interface {
 	CreateConversation(ctx context.Context, conversation Conversation) error
 	GetConversation(ctx context.Context, conversationID string) (Conversation, error)
 	AppendMessage(ctx context.Context, message Message) error
+	DeleteByGroup(ctx context.Context, groupID string) error
 }
 
 type Answerer interface {
@@ -375,6 +377,16 @@ func (s *Service) Ask(ctx context.Context, input AskInput) (AskResult, error) {
 	}, nil
 }
 
+func (s *Service) DeleteGroupConversations(ctx context.Context, groupID string) error {
+	if err := s.chunks.DeleteByGroup(ctx, groupID); err != nil {
+		return apperror.Wrap(apperror.CodeInternal, "delete group chunks", err)
+	}
+	if err := s.conversations.DeleteByGroup(ctx, groupID); err != nil {
+		return apperror.Wrap(apperror.CodeInternal, "delete group conversations", err)
+	}
+	return nil
+}
+
 type InMemoryChunkRepository struct {
 	mu     sync.RWMutex
 	chunks []Chunk
@@ -408,6 +420,20 @@ func (r *InMemoryChunkRepository) ListByGroup(_ context.Context, groupID string)
 		}
 	}
 	return items, nil
+}
+
+func (r *InMemoryChunkRepository) DeleteByGroup(_ context.Context, groupID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	filtered := r.chunks[:0]
+	for _, item := range r.chunks {
+		if item.GroupID == groupID {
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+	r.chunks = filtered
+	return nil
 }
 
 type InMemoryConversationRepository struct {
@@ -449,6 +475,17 @@ func (r *InMemoryConversationRepository) AppendMessage(_ context.Context, messag
 	conversation.Messages = append(conversation.Messages, message)
 	conversation.UpdatedAt = message.CreatedAt
 	r.conversations[message.ConversationID] = conversation
+	return nil
+}
+
+func (r *InMemoryConversationRepository) DeleteByGroup(_ context.Context, groupID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for conversationID, conversation := range r.conversations {
+		if conversation.GroupID == groupID {
+			delete(r.conversations, conversationID)
+		}
+	}
 	return nil
 }
 

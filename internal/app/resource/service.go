@@ -272,6 +272,19 @@ func (s *Service) DeleteResource(ctx context.Context, resourceID string) error {
 	return nil
 }
 
+func (s *Service) DeleteGroupResources(ctx context.Context, groupID string) error {
+	items, err := s.repo.ListByGroup(ctx, groupID)
+	if err != nil {
+		return apperror.Wrap(apperror.CodeInternal, "list resources", err)
+	}
+	for _, item := range items {
+		if err := s.DeleteResource(ctx, item.ID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (s *Service) PresignUpload(ctx context.Context, input PresignUploadInput) (PresignedUpload, error) {
 	if _, err := s.groupLookup.GetGroup(ctx, input.GroupID); err != nil {
 		return PresignedUpload{}, apperror.New(apperror.CodeNotFound, "group not found")
