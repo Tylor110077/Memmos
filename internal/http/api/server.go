@@ -9,9 +9,11 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
+	appgraph "github.com/tylor/goaipj/internal/app/graph"
 	appgroup "github.com/tylor/goaipj/internal/app/group"
 	appresource "github.com/tylor/goaipj/internal/app/resource"
 	"github.com/tylor/goaipj/internal/infra/apperror"
@@ -19,11 +21,13 @@ import (
 
 type Dependencies struct {
 	GroupService    *appgroup.Service
+	GraphService    *appgraph.Service
 	ResourceService *appresource.Service
 	Logger          *log.Logger
 }
 
 type Server struct {
+	graphService    *appgraph.Service
 	groupService    *appgroup.Service
 	resourceService *appresource.Service
 	logger          *log.Logger
@@ -70,8 +74,47 @@ type resourceWithJobResponse struct {
 	Job      jobResponse      `json:"job"`
 }
 
+type graphInfoResponse struct {
+	ID         string `json:"id"`
+	GroupID    string `json:"group_id"`
+	ResourceID string `json:"resource_id"`
+	Title      string `json:"title"`
+	Summary    string `json:"summary"`
+	Version    int    `json:"version"`
+	IsActive   bool   `json:"is_active"`
+	CreatedAt  string `json:"created_at"`
+	UpdatedAt  string `json:"updated_at"`
+}
+
+type graphNodeResponse struct {
+	ID          string `json:"id"`
+	GraphID     string `json:"graph_id"`
+	Name        string `json:"name"`
+	Type        string `json:"type"`
+	Description string `json:"description,omitempty"`
+	Meaning     string `json:"meaning,omitempty"`
+	Level       int    `json:"level"`
+	IsExpansion bool   `json:"is_expansion"`
+}
+
+type graphEdgeResponse struct {
+	ID          string `json:"id"`
+	GraphID     string `json:"graph_id"`
+	SourceID    string `json:"source_id"`
+	TargetID    string `json:"target_id"`
+	Relation    string `json:"relation"`
+	IsExpansion bool   `json:"is_expansion"`
+}
+
+type graphResponse struct {
+	Graph graphInfoResponse   `json:"graph"`
+	Nodes []graphNodeResponse `json:"nodes"`
+	Edges []graphEdgeResponse `json:"edges"`
+}
+
 func NewServer(deps Dependencies) http.Handler {
 	server := &Server{
+		graphService:    deps.GraphService,
 		groupService:    deps.GroupService,
 		resourceService: deps.ResourceService,
 		logger:          deps.Logger,
@@ -212,6 +255,10 @@ func (s *Server) handleResourcesRoot(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, toResourceWithJobResponse(result))
 		return
 	}
+	if len(parts) == 2 && parts[1] == "graph" && r.Method == http.MethodGet {
+		s.handleGetResourceGraph(w, r, parts[0])
+		return
+	}
 	writeError(w, r, apperror.New(apperror.CodeNotFound, "route not found"))
 }
 
@@ -288,6 +335,36 @@ func (s *Server) handleGetResource(w http.ResponseWriter, r *http.Request, group
 	writeJSON(w, http.StatusOK, toResourceResponse(item))
 }
 
+func (s *Server) handleGetResourceGraph(w http.ResponseWriter, r *http.Request, resourceID string) {
+	if s.graphService == nil {
+		writeError(w, r, apperror.New(apperror.CodeInternal, "graph service not configured"))
+		return
+	}
+	maxLevel := 0
+	if raw := r.URL.Query().Get("max_level"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil {
+			writeError(w, r, apperror.New(apperror.CodeInvalidArgument, "invalid max_level"))
+			return
+		}
+		maxLevel = parsed
+	}
+	includeExpansion := r.URL.Query().Get("include_expansion") == "true"
+	graph, err := s.graphService.GetResourceGraph(r.Context(), resourceID, appgraph.QueryOptions{
+		MaxLevel:         maxLevel,
+		IncludeExpansion: includeExpansion,
+	})
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	if graph.Graph.ID == "" {
+		writeError(w, r, apperror.New(apperror.CodeNotFound, "graph not found"))
+		return
+	}
+	writeJSON(w, http.StatusOK, toGraphResponse(graph))
+}
+
 func toGroupResponse(group appgroup.Group) groupResponse {
 	return groupResponse{
 		ID:        group.ID,
@@ -326,6 +403,48 @@ func toResourceWithJobResponse(item appresource.ResourceWithJob) resourceWithJob
 	return resourceWithJobResponse{
 		Resource: toResourceResponse(item.Resource),
 		Job:      toJobResponse(item.Job),
+	}
+}
+
+func toGraphResponse(item appgraph.SavedGraph) graphResponse {
+	nodes := make([]graphNodeResponse, 0, len(item.Nodes))
+	for _, node := range item.Nodes {
+		nodes = append(nodes, graphNodeResponse{
+			ID:          node.ID,
+			GraphID:     node.GraphID,
+			Name:        node.Name,
+			Type:        node.Type,
+			Description: node.Description,
+			Meaning:     node.Meaning,
+			Level:       node.Level,
+			IsExpansion: node.IsExpansion,
+		})
+	}
+	edges := make([]graphEdgeResponse, 0, len(item.Edges))
+	for _, edge := range item.Edges {
+		edges = append(edges, graphEdgeResponse{
+			ID:          edge.ID,
+			GraphID:     edge.GraphID,
+			SourceID:    edge.SourceID,
+			TargetID:    edge.TargetID,
+			Relation:    edge.Relation,
+			IsExpansion: edge.IsExpansion,
+		})
+	}
+	return graphResponse{
+		Graph: graphInfoResponse{
+			ID:         item.Graph.ID,
+			GroupID:    item.Graph.GroupID,
+			ResourceID: item.Graph.ResourceID,
+			Title:      item.Graph.Title,
+			Summary:    item.Graph.Summary,
+			Version:    item.Graph.Version,
+			IsActive:   item.Graph.IsActive,
+			CreatedAt:  item.Graph.CreatedAt.Format(time.RFC3339Nano),
+			UpdatedAt:  item.Graph.UpdatedAt.Format(time.RFC3339Nano),
+		},
+		Nodes: nodes,
+		Edges: edges,
 	}
 }
 

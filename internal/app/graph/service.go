@@ -31,14 +31,16 @@ type Node struct {
 	Description string `json:"description,omitempty"`
 	Meaning     string `json:"meaning,omitempty"`
 	Level       int    `json:"level"`
+	IsExpansion bool   `json:"is_expansion"`
 }
 
 type Edge struct {
-	ID       string `json:"id"`
-	GraphID  string `json:"graph_id"`
-	SourceID string `json:"source_id"`
-	TargetID string `json:"target_id"`
-	Relation string `json:"relation"`
+	ID          string `json:"id"`
+	GraphID     string `json:"graph_id"`
+	SourceID    string `json:"source_id"`
+	TargetID    string `json:"target_id"`
+	Relation    string `json:"relation"`
+	IsExpansion bool   `json:"is_expansion"`
 }
 
 type SavedGraph struct {
@@ -52,6 +54,11 @@ type SaveInput struct {
 	ResourceID string
 	Title      string
 	Document   pipelinegraph.Document
+}
+
+type QueryOptions struct {
+	MaxLevel         int
+	IncludeExpansion bool
 }
 
 type Repository interface {
@@ -108,21 +115,67 @@ func (s *Service) SaveResourceGraph(ctx context.Context, input SaveInput) (Saved
 			Description: node.Description,
 			Meaning:     node.Meaning,
 			Level:       node.Level,
+			IsExpansion: false,
 		})
 	}
 	for _, edge := range input.Document.Edges {
 		saved.Edges = append(saved.Edges, Edge{
-			ID:       edge.ID,
-			GraphID:  graphID,
-			SourceID: edge.SourceID,
-			TargetID: edge.TargetID,
-			Relation: edge.Relation,
+			ID:          edge.ID,
+			GraphID:     graphID,
+			SourceID:    edge.SourceID,
+			TargetID:    edge.TargetID,
+			Relation:    edge.Relation,
+			IsExpansion: false,
 		})
 	}
 	if err := s.repo.Save(ctx, saved); err != nil {
 		return SavedGraph{}, err
 	}
 	return saved, nil
+}
+
+func (s *Service) GetResourceGraph(ctx context.Context, resourceID string, opts QueryOptions) (SavedGraph, error) {
+	graph, err := s.repo.LatestResourceGraph(ctx, resourceID)
+	if err != nil {
+		return SavedGraph{}, err
+	}
+	if graph == nil {
+		return SavedGraph{}, nil
+	}
+	if opts.MaxLevel <= 0 && opts.IncludeExpansion {
+		return *graph, nil
+	}
+
+	allowed := map[string]struct{}{}
+	filteredNodes := make([]Node, 0, len(graph.Nodes))
+	for _, node := range graph.Nodes {
+		if opts.MaxLevel > 0 && node.Level > opts.MaxLevel {
+			continue
+		}
+		if !opts.IncludeExpansion && node.IsExpansion {
+			continue
+		}
+		filteredNodes = append(filteredNodes, node)
+		allowed[node.ID] = struct{}{}
+	}
+	filteredEdges := make([]Edge, 0, len(graph.Edges))
+	for _, edge := range graph.Edges {
+		if !opts.IncludeExpansion && edge.IsExpansion {
+			continue
+		}
+		if _, ok := allowed[edge.SourceID]; !ok {
+			continue
+		}
+		if _, ok := allowed[edge.TargetID]; !ok {
+			continue
+		}
+		filteredEdges = append(filteredEdges, edge)
+	}
+
+	out := *graph
+	out.Nodes = filteredNodes
+	out.Edges = filteredEdges
+	return out, nil
 }
 
 type InMemoryRepository struct {

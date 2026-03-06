@@ -3,6 +3,10 @@ package worker
 import (
 	"context"
 	"encoding/json"
+
+	appgraph "github.com/tylor/goaipj/internal/app/graph"
+	appresource "github.com/tylor/goaipj/internal/app/resource"
+	pipelinegraph "github.com/tylor/goaipj/internal/pipeline/graph"
 )
 
 const (
@@ -17,15 +21,31 @@ type Registrar interface {
 	Handle(taskType string, handler Handler)
 }
 
-type Registry struct{}
+type Dependencies struct {
+	ResourceService *appresource.Service
+	GraphService    *appgraph.Service
+	GraphGenerator  *pipelinegraph.Generator
+}
 
-func NewRegistry() *Registry {
-	return &Registry{}
+type Registry struct {
+	deps Dependencies
+}
+
+func NewRegistry(deps ...Dependencies) *Registry {
+	registry := &Registry{}
+	if len(deps) > 0 {
+		registry.deps = deps[0]
+	}
+	return registry
 }
 
 func (r *Registry) RegisterAll(registrar Registrar) {
 	registrar.Handle(TaskParseResource, decodeNoopHandler())
 	registrar.Handle(TaskFetchWebResource, decodeNoopHandler())
+	if r.deps.ResourceService != nil && r.deps.GraphService != nil && r.deps.GraphGenerator != nil {
+		registrar.Handle(TaskGenerateGraph, NewGenerateGraphHandler(r.deps.ResourceService, r.deps.GraphService, r.deps.GraphGenerator))
+		return
+	}
 	registrar.Handle(TaskGenerateGraph, decodeNoopHandler())
 }
 
