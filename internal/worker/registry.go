@@ -13,6 +13,7 @@ const (
 	TaskParseResource    = "resource:parse"
 	TaskFetchWebResource = "resource:fetch_web"
 	TaskGenerateGraph    = "graph:generate"
+	TaskExpandNode       = "graph:expand_node"
 )
 
 type Handler func(ctx context.Context, payload []byte) error
@@ -22,9 +23,10 @@ type Registrar interface {
 }
 
 type Dependencies struct {
-	ResourceService *appresource.Service
-	GraphService    *appgraph.Service
-	GraphGenerator  *pipelinegraph.Generator
+	ResourceService    *appresource.Service
+	GraphService       *appgraph.Service
+	GraphGenerator     *pipelinegraph.Generator
+	ExpansionGenerator expansionGenerator
 }
 
 type Registry struct {
@@ -44,9 +46,14 @@ func (r *Registry) RegisterAll(registrar Registrar) {
 	registrar.Handle(TaskFetchWebResource, decodeNoopHandler())
 	if r.deps.ResourceService != nil && r.deps.GraphService != nil && r.deps.GraphGenerator != nil {
 		registrar.Handle(TaskGenerateGraph, NewGenerateGraphHandler(r.deps.ResourceService, r.deps.GraphService, r.deps.GraphGenerator))
+	} else {
+		registrar.Handle(TaskGenerateGraph, decodeNoopHandler())
+	}
+	if r.deps.GraphService != nil && r.deps.ExpansionGenerator != nil {
+		registrar.Handle(TaskExpandNode, NewExpandNodeHandler(r.deps.GraphService, r.deps.ExpansionGenerator))
 		return
 	}
-	registrar.Handle(TaskGenerateGraph, decodeNoopHandler())
+	registrar.Handle(TaskExpandNode, decodeNoopHandler())
 }
 
 func decodeNoopHandler() Handler {

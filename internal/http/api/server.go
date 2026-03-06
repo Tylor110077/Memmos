@@ -17,20 +17,23 @@ import (
 	appgroup "github.com/tylor/goaipj/internal/app/group"
 	appresource "github.com/tylor/goaipj/internal/app/resource"
 	"github.com/tylor/goaipj/internal/infra/apperror"
+	pipelinegraph "github.com/tylor/goaipj/internal/pipeline/graph"
 )
 
 type Dependencies struct {
-	GroupService    *appgroup.Service
-	GraphService    *appgraph.Service
-	ResourceService *appresource.Service
-	Logger          *log.Logger
+	ExpansionGenerator appgraphExpansionGenerator
+	GroupService       *appgroup.Service
+	GraphService       *appgraph.Service
+	ResourceService    *appresource.Service
+	Logger             *log.Logger
 }
 
 type Server struct {
-	graphService    *appgraph.Service
-	groupService    *appgroup.Service
-	resourceService *appresource.Service
-	logger          *log.Logger
+	expansionGenerator appgraphExpansionGenerator
+	graphService       *appgraph.Service
+	groupService       *appgroup.Service
+	resourceService    *appresource.Service
+	logger             *log.Logger
 }
 
 type groupResponse struct {
@@ -129,12 +132,21 @@ type nodeExampleEntry struct {
 	Content string `json:"content"`
 }
 
+type expandNodeResponse struct {
+	Job jobResponse `json:"job"`
+}
+
+type appgraphExpansionGenerator interface {
+	Generate(input pipelinegraph.ExpansionInput) (pipelinegraph.Expansion, error)
+}
+
 func NewServer(deps Dependencies) http.Handler {
 	server := &Server{
-		graphService:    deps.GraphService,
-		groupService:    deps.GroupService,
-		resourceService: deps.ResourceService,
-		logger:          deps.Logger,
+		expansionGenerator: deps.ExpansionGenerator,
+		graphService:       deps.GraphService,
+		groupService:       deps.GroupService,
+		resourceService:    deps.ResourceService,
+		logger:             deps.Logger,
 	}
 
 	mux := http.NewServeMux()
@@ -278,6 +290,10 @@ func (s *Server) handleGraphsRoot(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(strings.Trim(path, "/"), "/")
 	if len(parts) == 3 && parts[1] == "nodes" && r.Method == http.MethodGet {
 		s.handleGetNodeDetail(w, r, parts[0], parts[2])
+		return
+	}
+	if len(parts) == 4 && parts[1] == "nodes" && parts[3] == "expand" && r.Method == http.MethodPost {
+		s.handleExpandNode(w, r, parts[0], parts[2])
 		return
 	}
 	writeError(w, r, apperror.New(apperror.CodeNotFound, "route not found"))
@@ -436,6 +452,52 @@ func (s *Server) handleGetNodeDetail(w http.ResponseWriter, r *http.Request, gra
 		return
 	}
 	writeJSON(w, http.StatusOK, toNodeDetailResponse(detail))
+}
+
+func (s *Server) handleExpandNode(w http.ResponseWriter, r *http.Request, graphID, nodeID string) {
+	if s.graphService == nil || s.expansionGenerator == nil {
+		writeError(w, r, apperror.New(apperror.CodeInternal, "expansion service not configured"))
+		return
+	}
+	detail, err := s.graphService.GetNodeDetail(r.Context(), graphID, nodeID)
+	if err != nil {
+		writeError(w, r, apperror.New(apperror.CodeNotFound, err.Error()))
+		return
+	}
+	neighbors := make([]pipelinegraph.Node, 0, len(detail.Neighbors))
+	for _, neighbor := range detail.Neighbors {
+		neighbors = append(neighbors, pipelinegraph.Node{
+			ID:    neighbor.Node.ID,
+			Name:  neighbor.Node.Name,
+			Type:  neighbor.Node.Type,
+			Level: neighbor.Node.Level,
+		})
+	}
+	expansion, err := s.expansionGenerator.Generate(pipelinegraph.ExpansionInput{
+		Current: pipelinegraph.Node{
+			ID:    detail.Node.ID,
+			Name:  detail.Node.Name,
+			Type:  detail.Node.Type,
+			Level: detail.Node.Level,
+		},
+		Neighbors: neighbors,
+	})
+	if err != nil {
+		writeError(w, r, apperror.New(apperror.CodeInvalidArgument, err.Error()))
+		return
+	}
+	if _, err := s.graphService.ExpandNode(r.Context(), graphID, nodeID, expansion); err != nil {
+		writeError(w, r, apperror.New(apperror.CodeInternal, err.Error()))
+		return
+	}
+	writeJSON(w, http.StatusOK, expandNodeResponse{
+		Job: jobResponse{
+			ID:        newTraceID(),
+			Type:      "expand_node",
+			Status:    "completed",
+			CreatedAt: time.Now().UTC().Format(time.RFC3339Nano),
+		},
+	})
 }
 
 func toGroupResponse(group appgroup.Group) groupResponse {

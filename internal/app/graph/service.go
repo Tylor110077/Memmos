@@ -215,6 +215,46 @@ func (s *Service) SaveFrameworkGraph(ctx context.Context, input SaveFrameworkInp
 	return saved, nil
 }
 
+func (s *Service) ExpandNode(ctx context.Context, graphID, nodeID string, expansion pipelinegraph.Expansion) (SavedGraph, error) {
+	graph, ok := s.getGraphByID(graphID)
+	if !ok {
+		return SavedGraph{}, errors.New("graph not found")
+	}
+	nodeExists := false
+	for _, node := range graph.Nodes {
+		if node.ID == nodeID {
+			nodeExists = true
+			break
+		}
+	}
+	if !nodeExists {
+		return SavedGraph{}, errors.New("node not found")
+	}
+	graph.Nodes = append(graph.Nodes, Node{
+		ID:          expansion.Node.ID,
+		GraphID:     graphID,
+		Name:        expansion.Node.Name,
+		Type:        expansion.Node.Type,
+		Description: expansion.Node.Description,
+		Meaning:     expansion.Node.Meaning,
+		Level:       expansion.Node.Level,
+		IsExpansion: true,
+	})
+	graph.Edges = append(graph.Edges, Edge{
+		ID:          expansion.Edge.ID,
+		GraphID:     graphID,
+		SourceID:    expansion.Edge.SourceID,
+		TargetID:    expansion.Edge.TargetID,
+		Relation:    expansion.Edge.Relation,
+		IsExpansion: true,
+	})
+	graph.Graph.UpdatedAt = time.Now().UTC()
+	if err := s.repo.Save(ctx, graph); err != nil {
+		return SavedGraph{}, err
+	}
+	return graph, nil
+}
+
 func (s *Service) GetResourceGraph(ctx context.Context, resourceID string, opts QueryOptions) (SavedGraph, error) {
 	graph, err := s.repo.LatestResourceGraph(ctx, resourceID)
 	if err != nil {
