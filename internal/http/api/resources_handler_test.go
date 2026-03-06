@@ -9,9 +9,11 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	appgraph "github.com/tylor/goaipj/internal/app/graph"
 	appgroup "github.com/tylor/goaipj/internal/app/group"
 	appresource "github.com/tylor/goaipj/internal/app/resource"
 	"github.com/tylor/goaipj/internal/infra/storage"
+	pipelinegraph "github.com/tylor/goaipj/internal/pipeline/graph"
 )
 
 func TestResourceEndpoints(t *testing.T) {
@@ -28,9 +30,11 @@ func TestResourceEndpoints(t *testing.T) {
 		appresource.NewInMemoryJobPublisher(),
 		storage.NewStore(newHTTPFakeBucketClient(), "bucket"),
 	)
+	graphService := appgraph.NewService(appgraph.NewInMemoryRepository())
 
 	server := NewServer(Dependencies{
 		GroupService:    groupService,
+		GraphService:    graphService,
 		ResourceService: resourceService,
 	})
 
@@ -68,9 +72,38 @@ func TestResourceEndpoints(t *testing.T) {
 		t.Fatalf("get status = %d", getResp.Code)
 	}
 
+	if _, err := graphService.SaveResourceGraph(context.Background(), appgraph.SaveInput{
+		GroupID:    group.ID,
+		ResourceID: created.Resource.ID,
+		Title:      "Uploaded Resource",
+		Document: pipelinegraph.Document{
+			Summary: "summary",
+			Nodes: []pipelinegraph.Node{
+				{ID: "root", Name: "Root", Type: "topic", Level: 0},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("SaveResourceGraph() error = %v", err)
+	}
+
 	retryResp := performJSONRequest(t, server, http.MethodPost, "/api/v1/resources/"+created.Resource.ID+"/retry", nil)
 	if retryResp.Code != http.StatusBadRequest {
 		t.Fatalf("retry status = %d, want 400 because uploaded resources cannot retry", retryResp.Code)
+	}
+
+	deleteResp := performJSONRequest(t, server, http.MethodDelete, "/api/v1/resources/"+created.Resource.ID, nil)
+	if deleteResp.Code != http.StatusNoContent {
+		t.Fatalf("delete status = %d body=%s", deleteResp.Code, deleteResp.Body.String())
+	}
+
+	missingResp := performJSONRequest(t, server, http.MethodGet, "/api/v1/groups/"+group.ID+"/resources/"+created.Resource.ID, nil)
+	if missingResp.Code != http.StatusNotFound {
+		t.Fatalf("missing status = %d body=%s", missingResp.Code, missingResp.Body.String())
+	}
+
+	graphResp := performJSONRequest(t, server, http.MethodGet, "/api/v1/resources/"+created.Resource.ID+"/graph", nil)
+	if graphResp.Code != http.StatusNotFound {
+		t.Fatalf("graph status = %d body=%s", graphResp.Code, graphResp.Body.String())
 	}
 }
 
@@ -117,4 +150,9 @@ func (f *httpFakeBucketClient) PutObject(_ context.Context, bucket, key string, 
 
 func (f *httpFakeBucketClient) GetObject(_ context.Context, bucket, key string) (io.ReadCloser, error) {
 	return io.NopCloser(bytes.NewReader(f.objects[bucket+"/"+key])), nil
+}
+
+func (f *httpFakeBucketClient) DeleteObject(_ context.Context, bucket, key string) error {
+	delete(f.objects, bucket+"/"+key)
+	return nil
 }

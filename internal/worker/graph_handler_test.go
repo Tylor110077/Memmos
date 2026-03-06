@@ -79,3 +79,8 @@ func (f *fakeStorageClient) GetObject(_ context.Context, bucket, key string) (io
 	_, _ = bucket, key
 	return io.NopCloser(bytes.NewReader(nil)), nil
 }
+
+func (f *fakeStorageClient) DeleteObject(_ context.Context, bucket, key string) error {
+	_, _ = bucket, key
+	return nil
+}

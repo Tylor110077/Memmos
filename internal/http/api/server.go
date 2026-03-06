@@ -588,6 +588,10 @@ func (s *Server) handleResourcesRoot(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, toResourceWithJobResponse(result))
 		return
 	}
+	if len(parts) == 1 && r.Method == http.MethodDelete {
+		s.handleDeleteResource(w, r, parts[0])
+		return
+	}
 	if len(parts) == 2 && parts[1] == "graph" && r.Method == http.MethodGet {
 		s.handleGetResourceGraph(w, r, parts[0])
 		return
@@ -684,6 +688,32 @@ func (s *Server) handleGetResource(w http.ResponseWriter, r *http.Request, group
 		return
 	}
 	writeJSON(w, http.StatusOK, toResourceResponse(item))
+}
+
+func (s *Server) handleDeleteResource(w http.ResponseWriter, r *http.Request, resourceID string) {
+	item, err := s.resourceService.GetResourceByID(r.Context(), resourceID)
+	if err != nil {
+		writeError(w, r, apperror.New(apperror.CodeNotFound, "resource not found"))
+		return
+	}
+	if err := s.resourceService.DeleteResource(r.Context(), resourceID); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	if s.graphService != nil {
+		if err := s.graphService.DeleteResourceGraphs(r.Context(), resourceID); err != nil {
+			writeError(w, r, apperror.Wrap(apperror.CodeInternal, "delete resource graphs", err))
+			return
+		}
+	}
+	s.publishGroupEvent(r.Context(), infraevent.Envelope{
+		Name:    "resource.deleted",
+		GroupID: item.GroupID,
+		Payload: map[string]any{
+			"resource_id": resourceID,
+		},
+	})
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleGetResourceGraph(w http.ResponseWriter, r *http.Request, resourceID string) {

@@ -32,6 +32,7 @@ type UploadInfo struct {
 type bucketClient interface {
 	PutObject(ctx context.Context, bucket, key string, reader io.Reader, size int64, opts PutObjectOptions) (UploadInfo, error)
 	GetObject(ctx context.Context, bucket, key string) (io.ReadCloser, error)
+	DeleteObject(ctx context.Context, bucket, key string) error
 }
 
 type Store struct {
@@ -63,6 +64,10 @@ func (s *Store) PutObject(ctx context.Context, input PutObjectInput) (ObjectMeta
 
 func (s *Store) GetObject(ctx context.Context, key string) (io.ReadCloser, error) {
 	return s.client.GetObject(ctx, s.bucket, normalizeObjectKey(key))
+}
+
+func (s *Store) DeleteObject(ctx context.Context, key string) error {
+	return s.client.DeleteObject(ctx, s.bucket, normalizeObjectKey(key))
 }
 
 func normalizeObjectKey(key string) string {

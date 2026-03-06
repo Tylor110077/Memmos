@@ -69,6 +69,20 @@ func TestGetObjectReturnsReader(t *testing.T) {
 	}
 }
 
+func TestDeleteObjectRemovesStoredKey(t *testing.T) {
+	client := &fakeBucketClient{objects: map[string][]byte{
+		"bucket-a/groups/group-1/resources/resource-2/raw/notes.pdf": []byte("pdf"),
+	}}
+	store := NewStore(client, "bucket-a")
+
+	if err := store.DeleteObject(context.Background(), "groups/group-1/resources/resource-2/raw/notes.pdf"); err != nil {
+		t.Fatalf("DeleteObject() error = %v", err)
+	}
+	if _, ok := client.objects["bucket-a/groups/group-1/resources/resource-2/raw/notes.pdf"]; ok {
+		t.Fatalf("expected object to be deleted")
+	}
+}
+
 type fakeBucketClient struct {
 	lastBucket string
 	lastKey    string
@@ -93,4 +107,10 @@ func (f *fakeBucketClient) PutObject(ctx context.Context, bucket, key string, re
 func (f *fakeBucketClient) GetObject(ctx context.Context, bucket, key string) (io.ReadCloser, error) {
 	_ = ctx
 	return io.NopCloser(bytes.NewReader(f.objects[bucket+"/"+key])), nil
+}
+
+func (f *fakeBucketClient) DeleteObject(ctx context.Context, bucket, key string) error {
+	_ = ctx
+	delete(f.objects, bucket+"/"+key)
+	return nil
 }

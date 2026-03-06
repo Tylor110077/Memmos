@@ -129,3 +129,37 @@ func TestGetNodeNeighborsReturnsOneHopRelations(t *testing.T) {
 		t.Fatalf("neighbors = %d, want 2", len(neighbors))
 	}
 }
+
+func TestDeleteResourceGraphsRemovesAllVersions(t *testing.T) {
+	repo := NewInMemoryRepository()
+	service := NewService(repo)
+	ctx := context.Background()
+
+	for _, title := range []string{"First", "Second"} {
+		if _, err := service.SaveResourceGraph(ctx, SaveInput{
+			GroupID:    "group-1",
+			ResourceID: "resource-1",
+			Title:      title,
+			Document: pipelinegraph.Document{
+				Summary: "summary",
+				Nodes: []pipelinegraph.Node{
+					{ID: title, Name: title, Type: "topic", Level: 0},
+				},
+			},
+		}); err != nil {
+			t.Fatalf("SaveResourceGraph(%s) error = %v", title, err)
+		}
+	}
+
+	if err := service.DeleteResourceGraphs(ctx, "resource-1"); err != nil {
+		t.Fatalf("DeleteResourceGraphs() error = %v", err)
+	}
+
+	got, err := service.GetResourceGraph(ctx, "resource-1", QueryOptions{IncludeExpansion: true})
+	if err != nil {
+		t.Fatalf("GetResourceGraph() error = %v", err)
+	}
+	if got.Graph.ID != "" {
+		t.Fatalf("expected graph to be removed, got %q", got.Graph.ID)
+	}
+}

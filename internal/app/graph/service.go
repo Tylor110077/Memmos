@@ -91,6 +91,7 @@ type Repository interface {
 	Save(ctx context.Context, graph SavedGraph) error
 	ListResourceGraphsByGroup(ctx context.Context, groupID string) ([]SavedGraph, error)
 	ListExamples(ctx context.Context, graphID string, nodeID string) ([]Example, error)
+	DeleteResourceGraphs(ctx context.Context, resourceID string) error
 }
 
 type Service struct {
@@ -314,6 +315,10 @@ func (s *Service) ListResourceGraphsByGroup(ctx context.Context, groupID string)
 	return s.repo.ListResourceGraphsByGroup(ctx, groupID)
 }
 
+func (s *Service) DeleteResourceGraphs(ctx context.Context, resourceID string) error {
+	return s.repo.DeleteResourceGraphs(ctx, resourceID)
+}
+
 func (s *Service) GetGraph(_ context.Context, graphID string) (SavedGraph, error) {
 	graph, ok := s.getGraphByID(graphID)
 	if !ok {
@@ -499,6 +504,21 @@ func (r *InMemoryRepository) ListExamples(_ context.Context, graphID string, nod
 	key := graphID + ":" + nodeID
 	items := append([]Example(nil), r.examples[key]...)
 	return items, nil
+}
+
+func (r *InMemoryRepository) DeleteResourceGraphs(_ context.Context, resourceID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for graphID, graph := range r.graphs {
+		if graph.Graph.ResourceID != resourceID {
+			continue
+		}
+		delete(r.graphs, graphID)
+		for _, node := range graph.Nodes {
+			delete(r.examples, graphID+":"+node.ID)
+		}
+	}
+	return nil
 }
 
 func (r *InMemoryRepository) GetByID(id string) (SavedGraph, bool) {

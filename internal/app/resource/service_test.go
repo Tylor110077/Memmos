@@ -175,6 +175,51 @@ func TestUpdateProcessingStatusAndFailure(t *testing.T) {
 	}
 }
 
+func TestDeleteResourceRemovesStoredArtifacts(t *testing.T) {
+	groupService := newGroupService(t)
+	repo := NewInMemoryRepository()
+	artifacts := NewInMemoryArtifactRepository()
+	bucket := newFakeBucketClient()
+	service := NewService(
+		groupService,
+		repo,
+		artifacts,
+		NewInMemoryJobPublisher(),
+		storage.NewStore(bucket, "test-bucket"),
+	)
+
+	created, err := service.UploadFile(context.Background(), UploadFileInput{
+		GroupID:     existingGroupID(t, groupService),
+		Filename:    "notes.pdf",
+		ContentType: "application/pdf",
+		Body:        bytes.NewReader([]byte("pdf")),
+		Size:        3,
+	})
+	if err != nil {
+		t.Fatalf("UploadFile() error = %v", err)
+	}
+	if len(artifacts.List()) != 1 {
+		t.Fatalf("artifact count = %d, want 1", len(artifacts.List()))
+	}
+	if len(bucket.objects) != 1 {
+		t.Fatalf("object count = %d, want 1", len(bucket.objects))
+	}
+
+	if err := service.DeleteResource(context.Background(), created.Resource.ID); err != nil {
+		t.Fatalf("DeleteResource() error = %v", err)
+	}
+
+	if _, err := repo.Get(context.Background(), created.Resource.ID); err == nil {
+		t.Fatalf("expected resource to be deleted")
+	}
+	if len(artifacts.List()) != 0 {
+		t.Fatalf("artifact count = %d, want 0", len(artifacts.List()))
+	}
+	if len(bucket.objects) != 0 {
+		t.Fatalf("object count = %d, want 0", len(bucket.objects))
+	}
+}
+
 func newGroupService(t *testing.T) *appgroup.Service {
 	t.Helper()
 	repo := appgroup.NewInMemoryRepository()
@@ -214,4 +259,9 @@ func (f *fakeBucketClient) PutObject(_ context.Context, bucket, key string, read
 
 func (f *fakeBucketClient) GetObject(_ context.Context, bucket, key string) (io.ReadCloser, error) {
 	return io.NopCloser(bytes.NewReader(f.objects[bucket+"/"+key])), nil
+}
+
+func (f *fakeBucketClient) DeleteObject(_ context.Context, bucket, key string) error {
+	delete(f.objects, bucket+"/"+key)
+	return nil
 }

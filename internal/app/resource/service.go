@@ -78,10 +78,13 @@ type Repository interface {
 	Get(ctx context.Context, id string) (*domainresource.Resource, error)
 	Update(ctx context.Context, entity domainresource.Resource) error
 	ListByGroup(ctx context.Context, groupID string) ([]domainresource.Resource, error)
+	Delete(ctx context.Context, id string) error
 }
 
 type ArtifactRepository interface {
 	Create(ctx context.Context, artifact Artifact) error
+	ListByResource(ctx context.Context, resourceID string) ([]Artifact, error)
+	DeleteByResource(ctx context.Context, resourceID string) error
 }
 
 type JobPublisher interface {
@@ -90,6 +93,7 @@ type JobPublisher interface {
 
 type ObjectStore interface {
 	PutObject(ctx context.Context, input storage.PutObjectInput) (storage.ObjectMeta, error)
+	DeleteObject(ctx context.Context, key string) error
 }
 
 type Service struct {
@@ -191,10 +195,14 @@ func (s *Service) GetResource(ctx context.Context, groupID, resourceID string) (
 	if err != nil {
 		return Resource{}, apperror.New(apperror.CodeNotFound, "resource not found")
 	}
-	if item.GroupID != groupID {
+	if groupID != "" && item.GroupID != groupID {
 		return Resource{}, apperror.New(apperror.CodeNotFound, "resource not found")
 	}
 	return toDTO(*item), nil
+}
+
+func (s *Service) GetResourceByID(ctx context.Context, resourceID string) (Resource, error) {
+	return s.GetResource(ctx, "", resourceID)
 }
 
 func (s *Service) RetryResource(ctx context.Context, resourceID string) (ResourceWithJob, error) {
@@ -218,6 +226,32 @@ func (s *Service) RetryResource(ctx context.Context, resourceID string) (Resourc
 		return ResourceWithJob{}, apperror.Wrap(apperror.CodeInternal, "publish retry job", err)
 	}
 	return ResourceWithJob{Resource: toDTO(*item), Job: job}, nil
+}
+
+func (s *Service) DeleteResource(ctx context.Context, resourceID string) error {
+	item, err := s.repo.Get(ctx, resourceID)
+	if err != nil {
+		return apperror.New(apperror.CodeNotFound, "resource not found")
+	}
+	artifacts, err := s.artifacts.ListByResource(ctx, resourceID)
+	if err != nil {
+		return apperror.Wrap(apperror.CodeInternal, "list artifacts", err)
+	}
+	for _, artifact := range artifacts {
+		if artifact.StorageKey == "" {
+			continue
+		}
+		if err := s.store.DeleteObject(ctx, artifact.StorageKey); err != nil {
+			return apperror.Wrap(apperror.CodeInternal, "delete stored artifact", err)
+		}
+	}
+	if err := s.artifacts.DeleteByResource(ctx, resourceID); err != nil {
+		return apperror.Wrap(apperror.CodeInternal, "delete artifacts", err)
+	}
+	if err := s.repo.Delete(ctx, item.ID); err != nil {
+		return apperror.Wrap(apperror.CodeInternal, "delete resource", err)
+	}
+	return nil
 }
 
 func (s *Service) UpdateStatus(ctx context.Context, resourceID string, next domainresource.Status) (Resource, error) {
@@ -330,6 +364,16 @@ func (r *InMemoryRepository) ListByGroup(_ context.Context, groupID string) ([]d
 	return items, nil
 }
 
+func (r *InMemoryRepository) Delete(_ context.Context, id string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.resources[id]; !ok {
+		return errors.New("not found")
+	}
+	delete(r.resources, id)
+	return nil
+}
+
 type InMemoryArtifactRepository struct {
 	mu        sync.RWMutex
 	artifacts []Artifact
@@ -343,6 +387,32 @@ func (r *InMemoryArtifactRepository) Create(_ context.Context, artifact Artifact
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.artifacts = append(r.artifacts, artifact)
+	return nil
+}
+
+func (r *InMemoryArtifactRepository) ListByResource(_ context.Context, resourceID string) ([]Artifact, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	items := make([]Artifact, 0)
+	for _, artifact := range r.artifacts {
+		if artifact.ResourceID == resourceID {
+			items = append(items, artifact)
+		}
+	}
+	return items, nil
+}
+
+func (r *InMemoryArtifactRepository) DeleteByResource(_ context.Context, resourceID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	filtered := r.artifacts[:0]
+	for _, artifact := range r.artifacts {
+		if artifact.ResourceID == resourceID {
+			continue
+		}
+		filtered = append(filtered, artifact)
+	}
+	r.artifacts = filtered
 	return nil
 }
 

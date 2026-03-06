@@ -47,3 +47,7 @@ func (m *minioBucketClient) PutObject(ctx context.Context, bucket, key string, r
 func (m *minioBucketClient) GetObject(ctx context.Context, bucket, key string) (io.ReadCloser, error) {
 	return m.client.GetObject(ctx, bucket, key, minio.GetObjectOptions{})
 }
+
+func (m *minioBucketClient) DeleteObject(ctx context.Context, bucket, key string) error {
+	return m.client.RemoveObject(ctx, bucket, key, minio.RemoveObjectOptions{})
+}
