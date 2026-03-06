@@ -215,7 +215,12 @@ export function ResourceGraphPage() {
           </header>
           {graphQuery.data ? (
             <section className="graph-canvas">
-              <KnowledgeGraph graph={graphQuery.data} selectedNodeId={nodeId} onSelectNode={setSelectedNodeId} />
+              <KnowledgeGraph
+                graph={graphQuery.data}
+                selectedNodeId={nodeId}
+                onSelectNode={setSelectedNodeId}
+                exportName={`${resource?.name ?? "resource"}-knowledge-graph`}
+              />
             </section>
           ) : (
             <StateBlock title="暂无图谱数据" description="当前资源缺少可渲染的图谱结构。" />

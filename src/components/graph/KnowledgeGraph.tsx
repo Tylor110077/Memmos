@@ -13,8 +13,11 @@ import {
   useEdgesState,
   useNodesState,
 } from "@xyflow/react";
+import { useTheme } from "@/components/theme/ThemeProvider";
+import { Button } from "@/components/ui/Button";
 import type { GraphView } from "@/api/types";
 import { cn } from "@/lib/utils";
+import { buildGraphSvg, downloadGraphSvg } from "@/components/graph/exportGraph";
 
 const elk = new ELK();
 
@@ -23,6 +26,7 @@ type KnowledgeGraphProps = {
   selectedNodeId?: string;
   onSelectNode?: (nodeId: string) => void;
   variant?: "default" | "preview";
+  exportName?: string;
 };
 
 async function layoutGraph(graph: GraphView, variant: "default" | "preview") {
@@ -66,7 +70,9 @@ export function KnowledgeGraph({
   selectedNodeId,
   onSelectNode,
   variant = "default",
+  exportName,
 }: KnowledgeGraphProps) {
+  const { theme } = useTheme();
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [ready, setReady] = useState(false);
@@ -132,6 +138,17 @@ export function KnowledgeGraph({
     [nodes, selectedNodeId, variant],
   );
 
+  function handleExport() {
+    const svg = buildGraphSvg({
+      graph,
+      nodes,
+      edges,
+      title: exportName ?? graph.graph.summary ?? "knowledge-graph",
+      theme,
+    });
+    downloadGraphSvg(exportName ?? graph.graph.summary ?? "knowledge-graph", svg);
+  }
+
   return (
     <div className={cn("graph-flow-shell", variant === "preview" && "graph-flow-shell-preview")} data-ready={ready}>
       <ReactFlow
@@ -158,6 +175,13 @@ export function KnowledgeGraph({
         {variant === "default" ? (
           <Panel position="top-left">
             <div className="graph-panel-tag">{graph.graph.summary ?? "知识图谱"}</div>
+          </Panel>
+        ) : null}
+        {variant === "default" ? (
+          <Panel position="top-right">
+            <Button variant="ghost" onClick={handleExport} disabled={!ready || !nodes.length}>
+              导出 SVG
+            </Button>
           </Panel>
         ) : null}
       </ReactFlow>

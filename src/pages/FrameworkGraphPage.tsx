@@ -45,7 +45,7 @@ export function FrameworkGraphPage() {
           </header>
           {graphQuery.data ? (
             <section className="graph-canvas">
-              <KnowledgeGraph graph={graphQuery.data} />
+              <KnowledgeGraph graph={graphQuery.data} exportName={`${groupQuery.data?.name ?? "framework"}-framework-graph`} />
             </section>
           ) : (
             <StateBlock title="框架图谱尚未生成" description="等至少一部分资源处理完成后，这里会显示分组级骨架视图。" />
