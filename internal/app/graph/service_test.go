@@ -163,3 +163,39 @@ func TestDeleteResourceGraphsRemovesAllVersions(t *testing.T) {
 		t.Fatalf("expected graph to be removed, got %q", got.Graph.ID)
 	}
 }
+
+func TestListResourceGraphVersionsReturnsDescendingHistory(t *testing.T) {
+	repo := NewInMemoryRepository()
+	service := NewService(repo)
+	ctx := context.Background()
+
+	for _, title := range []string{"Graph 1", "Graph 2", "Graph 3"} {
+		if _, err := service.SaveResourceGraph(ctx, SaveInput{
+			GroupID:    "group-1",
+			ResourceID: "resource-1",
+			Title:      title,
+			Document: pipelinegraph.Document{
+				Summary: title,
+				Nodes: []pipelinegraph.Node{
+					{ID: title, Name: title, Type: "topic", Level: 0},
+				},
+			},
+		}); err != nil {
+			t.Fatalf("SaveResourceGraph(%s) error = %v", title, err)
+		}
+	}
+
+	versions, err := service.ListResourceGraphVersions(ctx, "resource-1")
+	if err != nil {
+		t.Fatalf("ListResourceGraphVersions() error = %v", err)
+	}
+	if len(versions) != 3 {
+		t.Fatalf("versions = %d, want 3", len(versions))
+	}
+	if versions[0].Graph.Version != 3 || !versions[0].Graph.IsActive {
+		t.Fatalf("latest version = %d active=%v", versions[0].Graph.Version, versions[0].Graph.IsActive)
+	}
+	if versions[2].Graph.Version != 1 {
+		t.Fatalf("oldest version = %d, want 1", versions[2].Graph.Version)
+	}
+}

@@ -92,3 +92,38 @@ func TestGetNodeDetailReturnsNeighborsAndExamples(t *testing.T) {
 		t.Fatalf("examples = %d, want 1", len(detail.Examples))
 	}
 }
+
+func TestListFrameworkGraphVersionsReturnsDescendingHistory(t *testing.T) {
+	repo := NewInMemoryRepository()
+	service := NewService(repo)
+	ctx := context.Background()
+
+	for _, title := range []string{"Framework 1", "Framework 2", "Framework 3"} {
+		if _, err := service.SaveFrameworkGraph(ctx, SaveFrameworkInput{
+			GroupID: "group-1",
+			Title:   title,
+			Document: pipelinegraph.Document{
+				Summary: title,
+				Nodes: []pipelinegraph.Node{
+					{ID: title, Name: title, Type: "topic", Level: 0},
+				},
+			},
+		}); err != nil {
+			t.Fatalf("SaveFrameworkGraph(%s) error = %v", title, err)
+		}
+	}
+
+	versions, err := service.ListFrameworkGraphVersions(ctx, "group-1")
+	if err != nil {
+		t.Fatalf("ListFrameworkGraphVersions() error = %v", err)
+	}
+	if len(versions) != 3 {
+		t.Fatalf("versions = %d, want 3", len(versions))
+	}
+	if versions[0].Graph.Version != 3 || versions[0].Graph.IsActive != true {
+		t.Fatalf("latest version = %d active=%v", versions[0].Graph.Version, versions[0].Graph.IsActive)
+	}
+	if versions[2].Graph.Version != 1 {
+		t.Fatalf("oldest version = %d, want 1", versions[2].Graph.Version)
+	}
+}

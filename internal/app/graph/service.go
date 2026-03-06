@@ -90,6 +90,8 @@ type Repository interface {
 	LatestFrameworkGraph(ctx context.Context, groupID string) (*SavedGraph, error)
 	Save(ctx context.Context, graph SavedGraph) error
 	ListResourceGraphsByGroup(ctx context.Context, groupID string) ([]SavedGraph, error)
+	ListResourceGraphVersions(ctx context.Context, resourceID string) ([]SavedGraph, error)
+	ListFrameworkGraphVersions(ctx context.Context, groupID string) ([]SavedGraph, error)
 	ListExamples(ctx context.Context, graphID string, nodeID string) ([]Example, error)
 	DeleteResourceGraphs(ctx context.Context, resourceID string) error
 }
@@ -319,6 +321,14 @@ func (s *Service) DeleteResourceGraphs(ctx context.Context, resourceID string) e
 	return s.repo.DeleteResourceGraphs(ctx, resourceID)
 }
 
+func (s *Service) ListResourceGraphVersions(ctx context.Context, resourceID string) ([]SavedGraph, error) {
+	return s.repo.ListResourceGraphVersions(ctx, resourceID)
+}
+
+func (s *Service) ListFrameworkGraphVersions(ctx context.Context, groupID string) ([]SavedGraph, error) {
+	return s.repo.ListFrameworkGraphVersions(ctx, groupID)
+}
+
 func (s *Service) GetGraph(_ context.Context, graphID string) (SavedGraph, error) {
 	graph, ok := s.getGraphByID(graphID)
 	if !ok {
@@ -491,6 +501,32 @@ func (r *InMemoryRepository) ListResourceGraphsByGroup(_ context.Context, groupI
 	items := make([]SavedGraph, 0)
 	for _, graph := range r.graphs {
 		if graph.Graph.GroupID == groupID && graph.Graph.ResourceID != "" && graph.Graph.IsActive {
+			items = append(items, graph)
+		}
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].Graph.Version > items[j].Graph.Version })
+	return items, nil
+}
+
+func (r *InMemoryRepository) ListResourceGraphVersions(_ context.Context, resourceID string) ([]SavedGraph, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	items := make([]SavedGraph, 0)
+	for _, graph := range r.graphs {
+		if graph.Graph.ResourceID == resourceID {
+			items = append(items, graph)
+		}
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].Graph.Version > items[j].Graph.Version })
+	return items, nil
+}
+
+func (r *InMemoryRepository) ListFrameworkGraphVersions(_ context.Context, groupID string) ([]SavedGraph, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	items := make([]SavedGraph, 0)
+	for _, graph := range r.graphs {
+		if graph.Graph.GroupID == groupID && graph.Graph.ResourceID == "" {
 			items = append(items, graph)
 		}
 	}

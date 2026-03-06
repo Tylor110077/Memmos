@@ -415,6 +415,8 @@ func (s *Server) handleGroupSubresource(w http.ResponseWriter, r *http.Request, 
 		s.handleCreateWebResource(w, r, groupID)
 	case len(parts) == 1 && parts[0] == "framework-graph" && r.Method == http.MethodGet:
 		s.handleGetFrameworkGraph(w, r, groupID)
+	case len(parts) == 2 && parts[0] == "framework-graph" && parts[1] == "versions" && r.Method == http.MethodGet:
+		s.handleListFrameworkGraphVersions(w, r, groupID)
 	case len(parts) == 2 && parts[0] == "framework-graph" && parts[1] == "generate" && r.Method == http.MethodPost:
 		s.handleGenerateFrameworkGraph(w, r, groupID)
 	default:
@@ -586,13 +588,20 @@ func (s *Server) handleJobsRoot(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleResourcesRoot(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/api/v1/resources/")
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) == 3 && parts[1] == "graph" && parts[2] == "versions" && r.Method == http.MethodGet {
+		s.handleListResourceGraphVersions(w, r, parts[0])
+		return
+	}
+	if len(parts) == 2 && parts[1] == "graph" && r.Method == http.MethodGet {
+		s.handleGetResourceGraph(w, r, parts[0])
+		return
+	}
 	if s.resourceService == nil {
 		writeError(w, r, apperror.New(apperror.CodeInternal, "resource service not configured"))
 		return
 	}
-
-	path := strings.TrimPrefix(r.URL.Path, "/api/v1/resources/")
-	parts := strings.Split(strings.Trim(path, "/"), "/")
 	if len(parts) == 2 && parts[1] == "retry" && r.Method == http.MethodPost {
 		result, err := s.resourceService.RetryResource(r.Context(), parts[0])
 		if err != nil {
@@ -613,10 +622,6 @@ func (s *Server) handleResourcesRoot(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(parts) == 1 && r.Method == http.MethodDelete {
 		s.handleDeleteResource(w, r, parts[0])
-		return
-	}
-	if len(parts) == 2 && parts[1] == "graph" && r.Method == http.MethodGet {
-		s.handleGetResourceGraph(w, r, parts[0])
 		return
 	}
 	writeError(w, r, apperror.New(apperror.CodeNotFound, "route not found"))
@@ -774,6 +779,23 @@ func (s *Server) handleGetResourceGraph(w http.ResponseWriter, r *http.Request, 
 	writeJSON(w, http.StatusOK, toGraphResponse(graph))
 }
 
+func (s *Server) handleListResourceGraphVersions(w http.ResponseWriter, r *http.Request, resourceID string) {
+	if s.graphService == nil {
+		writeError(w, r, apperror.New(apperror.CodeInternal, "graph service not configured"))
+		return
+	}
+	items, err := s.graphService.ListResourceGraphVersions(r.Context(), resourceID)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	resp := make([]graphInfoResponse, 0, len(items))
+	for _, item := range items {
+		resp = append(resp, toGraphInfoResponse(item.Graph))
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
 func (s *Server) handleGetFrameworkGraph(w http.ResponseWriter, r *http.Request, groupID string) {
 	if s.graphService == nil {
 		writeError(w, r, apperror.New(apperror.CodeInternal, "graph service not configured"))
@@ -791,6 +813,23 @@ func (s *Server) handleGetFrameworkGraph(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	writeJSON(w, http.StatusOK, toGraphResponse(graph))
+}
+
+func (s *Server) handleListFrameworkGraphVersions(w http.ResponseWriter, r *http.Request, groupID string) {
+	if s.graphService == nil {
+		writeError(w, r, apperror.New(apperror.CodeInternal, "graph service not configured"))
+		return
+	}
+	items, err := s.graphService.ListFrameworkGraphVersions(r.Context(), groupID)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	resp := make([]graphInfoResponse, 0, len(items))
+	for _, item := range items {
+		resp = append(resp, toGraphInfoResponse(item.Graph))
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) handleGenerateFrameworkGraph(w http.ResponseWriter, r *http.Request, groupID string) {
@@ -1064,19 +1103,23 @@ func toGraphResponse(item appgraph.SavedGraph) graphResponse {
 		})
 	}
 	return graphResponse{
-		Graph: graphInfoResponse{
-			ID:         item.Graph.ID,
-			GroupID:    item.Graph.GroupID,
-			ResourceID: item.Graph.ResourceID,
-			Title:      item.Graph.Title,
-			Summary:    item.Graph.Summary,
-			Version:    item.Graph.Version,
-			IsActive:   item.Graph.IsActive,
-			CreatedAt:  item.Graph.CreatedAt.Format(time.RFC3339Nano),
-			UpdatedAt:  item.Graph.UpdatedAt.Format(time.RFC3339Nano),
-		},
+		Graph: toGraphInfoResponse(item.Graph),
 		Nodes: nodes,
 		Edges: edges,
+	}
+}
+
+func toGraphInfoResponse(graph appgraph.Graph) graphInfoResponse {
+	return graphInfoResponse{
+		ID:         graph.ID,
+		GroupID:    graph.GroupID,
+		ResourceID: graph.ResourceID,
+		Title:      graph.Title,
+		Summary:    graph.Summary,
+		Version:    graph.Version,
+		IsActive:   graph.IsActive,
+		CreatedAt:  graph.CreatedAt.Format(time.RFC3339Nano),
+		UpdatedAt:  graph.UpdatedAt.Format(time.RFC3339Nano),
 	}
 }
 
