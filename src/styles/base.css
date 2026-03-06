@@ -11,9 +11,7 @@ body,
 body {
   margin: 0;
   font-family: "Inter", "Noto Sans SC", "PingFang SC", sans-serif;
-  background:
-    radial-gradient(circle at top left, rgba(79, 124, 255, 0.09), transparent 24%),
-    linear-gradient(180deg, #f9fbfe 0%, #f3f6fb 100%);
+  background: var(--shell-gradient);
   color: var(--text);
 }
 
@@ -69,14 +67,14 @@ p {
   min-height: calc(100vh - 80px);
   border-radius: 28px;
   overflow: hidden;
-  border: 1px solid rgba(215, 222, 231, 0.8);
+  border: 1px solid color-mix(in srgb, var(--line) 88%, transparent);
   background: var(--surface-soft);
   box-shadow: 0 28px 80px rgba(26, 40, 67, 0.08);
 }
 
 .sidebar {
   padding: 24px 18px;
-  background: linear-gradient(180deg, #f8fafc 0%, #f4f7fb 100%);
+  background: var(--sidebar-gradient);
   border-right: 1px solid var(--line);
 }
 
@@ -86,7 +84,7 @@ p {
 
 .context {
   padding: 24px 20px;
-  background: linear-gradient(180deg, #fcfdff 0%, #f8fafc 100%);
+  background: var(--context-gradient);
   border-left: 1px solid var(--line);
   display: grid;
   align-content: start;
@@ -114,7 +112,7 @@ p {
 .brand {
   justify-content: flex-start;
   gap: 14px;
-  margin-bottom: 28px;
+  margin-bottom: 18px;
 }
 
 .brand-mark {
@@ -133,6 +131,23 @@ p {
 .brand strong,
 .recent-item strong {
   display: block;
+}
+
+.theme-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px 16px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+.theme-toggle-btn {
+  min-width: 92px;
+  padding-inline: 12px;
 }
 
 .brand span,
@@ -384,7 +399,7 @@ h6 {
 .group-card.muted {
   display: grid;
   place-items: center;
-  background: linear-gradient(180deg, #fbfcfe, #f5f7fb);
+  background: linear-gradient(180deg, var(--surface-muted), var(--surface-tint));
   border-style: dashed;
 }
 
@@ -425,7 +440,7 @@ h6 {
 }
 
 .pill.neutral {
-  background: #f3f6fa;
+  background: var(--surface-strong);
   color: var(--text-faint);
 }
 
@@ -489,7 +504,7 @@ h6 {
 .mini-stats div {
   padding: 14px 12px;
   border-radius: 14px;
-  background: #f5f8fc;
+  background: var(--surface-tint);
   border: 1px solid var(--line);
 }
 
@@ -517,7 +532,7 @@ h6 {
   gap: 14px;
   padding: 14px 16px;
   border-radius: 14px;
-  background: #fbfcfe;
+  background: var(--surface-muted);
   border: 1px solid var(--line);
   align-items: center;
 }
@@ -600,7 +615,7 @@ h6 {
 .segmented button {
   flex: 1;
   border: 1px solid var(--line);
-  background: #f8fafc;
+  background: var(--surface-alt);
   border-radius: 12px;
   padding: 10px 12px;
   color: var(--text-soft);
@@ -623,7 +638,7 @@ h6 {
   border-radius: 22px;
   overflow: hidden;
   border: 1px solid var(--line);
-  background: linear-gradient(180deg, #f9fbfe 0%, #f4f7fb 100%);
+  background: var(--panel-gradient);
 }
 
 .graph-flow-shell {
@@ -636,7 +651,7 @@ h6 {
   height: 420px;
   border-radius: 16px;
   overflow: hidden;
-  background: linear-gradient(180deg, #f9fbfe 0%, #f4f7fb 100%);
+  background: var(--panel-gradient);
 }
 
 .graph-flow-shell-preview .react-flow__renderer,
@@ -651,8 +666,8 @@ h6 {
 .graph-panel-tag {
   padding: 10px 14px;
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.88);
-  border: 1px solid rgba(227, 232, 239, 0.8);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  border: 1px solid color-mix(in srgb, var(--line) 88%, transparent);
   box-shadow: var(--shadow-sm);
   max-width: 360px;
   font-size: 13px;
@@ -721,7 +736,7 @@ h6 {
 .relation-item {
   padding: 12px;
   border-radius: 14px;
-  background: #f7f9fc;
+  background: var(--surface-tint);
   border: 1px solid var(--line);
 }
 
@@ -751,7 +766,7 @@ h6 {
 }
 
 .chat-msg.ai {
-  background: #f5f8fc;
+  background: var(--surface-tint);
   border: 1px solid var(--line);
 }
 
@@ -800,7 +815,7 @@ h6 {
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(31, 41, 55, 0.28);
+  background: var(--backdrop);
   display: grid;
   place-items: center;
   padding: 24px;
@@ -821,7 +836,7 @@ h6 {
   padding: 14px 16px;
   border-radius: 16px;
   border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.96);
+  background: var(--toast-bg);
   box-shadow: var(--shadow-md);
 }
 
@@ -872,7 +887,7 @@ h6 {
   padding: 18px;
   border-radius: 18px;
   border: 1px dashed var(--line-strong);
-  background: linear-gradient(180deg, #fbfcfe 0%, #f5f8fc 100%);
+  background: linear-gradient(180deg, var(--surface-muted) 0%, var(--surface-tint) 100%);
   color: var(--text-soft);
   text-align: center;
 }
@@ -887,7 +902,12 @@ h6 {
 
 .skeleton-card {
   min-height: 120px;
-  background: linear-gradient(90deg, rgba(243, 246, 250, 0.8), rgba(232, 238, 245, 0.8), rgba(243, 246, 250, 0.8));
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--surface-strong) 82%, transparent),
+    color-mix(in srgb, var(--surface-tint) 82%, transparent),
+    color-mix(in srgb, var(--surface-strong) 82%, transparent)
+  );
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite linear;
 }

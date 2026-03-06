@@ -4,6 +4,17 @@
   --surface-soft: #fafbfc;
   --surface-alt: #f8fafc;
   --canvas-bg: #f7fafd;
+  --shell-gradient:
+    radial-gradient(circle at top left, rgba(79, 124, 255, 0.09), transparent 24%),
+    linear-gradient(180deg, #f9fbfe 0%, #f3f6fb 100%);
+  --sidebar-gradient: linear-gradient(180deg, #f8fafc 0%, #f4f7fb 100%);
+  --context-gradient: linear-gradient(180deg, #fcfdff 0%, #f8fafc 100%);
+  --panel-gradient: linear-gradient(180deg, #f9fbfe 0%, #f4f7fb 100%);
+  --surface-muted: #fbfcfe;
+  --surface-tint: #f5f8fc;
+  --surface-strong: #f3f6fa;
+  --backdrop: rgba(31, 41, 55, 0.28);
+  --toast-bg: rgba(255, 255, 255, 0.96);
   --line: #e3e8ef;
   --line-strong: #d7dee7;
   --text: #1f2937;
@@ -37,4 +48,52 @@
   --radius-md: 16px;
   --radius-sm: 12px;
   --page-width: 1440px;
+}
+
+:root[data-theme="dark"] {
+  --bg: #09111f;
+  --surface: #101a2d;
+  --surface-soft: #0d1526;
+  --surface-alt: #132038;
+  --canvas-bg: #0f172a;
+  --shell-gradient:
+    radial-gradient(circle at top left, rgba(56, 189, 248, 0.18), transparent 26%),
+    linear-gradient(180deg, #0a1222 0%, #0c172a 100%);
+  --sidebar-gradient: linear-gradient(180deg, #10192d 0%, #0d1526 100%);
+  --context-gradient: linear-gradient(180deg, #111b31 0%, #0d1526 100%);
+  --panel-gradient: linear-gradient(180deg, #101a2d 0%, #0c1527 100%);
+  --surface-muted: #122038;
+  --surface-tint: #16233d;
+  --surface-strong: #17243b;
+  --backdrop: rgba(3, 7, 18, 0.72);
+  --toast-bg: rgba(12, 21, 39, 0.96);
+  --line: #22314a;
+  --line-strong: #31425e;
+  --text: #e8eefb;
+  --text-soft: #b7c4dd;
+  --text-faint: #94a6c8;
+  --weak: #73839d;
+  --primary: #67a3ff;
+  --primary-strong: #8db8ff;
+  --primary-soft: rgba(103, 163, 255, 0.14);
+  --success: #34d399;
+  --success-soft: rgba(52, 211, 153, 0.16);
+  --warning: #fbbf24;
+  --warning-soft: rgba(251, 191, 36, 0.16);
+  --danger: #fb7185;
+  --danger-soft: rgba(251, 113, 133, 0.16);
+  --extend: #221735;
+  --extend-line: #604692;
+  --extend-text: #d2c2ff;
+  --root-bg: #18284b;
+  --root-line: #5f88df;
+  --root-text: #dbe8ff;
+  --level2-bg: #16233d;
+  --level2-line: #496592;
+  --level2-text: #d5e1fa;
+  --level3-bg: #132038;
+  --level3-line: #32496c;
+  --level3-text: #cfdaef;
+  --shadow-sm: 0 10px 30px rgba(0, 0, 0, 0.28);
+  --shadow-md: 0 18px 44px rgba(0, 0, 0, 0.4);
 }

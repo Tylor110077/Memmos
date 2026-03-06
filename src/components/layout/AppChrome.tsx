@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
+import { useTheme } from "@/components/theme/ThemeProvider";
+import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils";
 
 type NavItem = {
@@ -30,6 +32,8 @@ export function AppChrome({
   sidebarClassName,
   workspaceClassName,
 }: AppChromeProps) {
+  const { theme, toggleTheme } = useTheme();
+
   return (
     <div className="page-shell">
       <div className={cn("workspace", workspaceClassName)}>
@@ -40,6 +44,12 @@ export function AppChrome({
               <strong>学习知识图谱助手</strong>
               <span>{sidebarTitle ?? "Knowledge Workspace"}</span>
             </div>
+          </div>
+          <div className="theme-toggle-row">
+            <span>{theme === "light" ? "浅色模式" : "深色模式"}</span>
+            <Button variant="ghost" className="theme-toggle-btn" onClick={toggleTheme}>
+              {theme === "light" ? "切换深色" : "切换浅色"}
+            </Button>
           </div>
           <nav className="nav">
             {navItems.map((item) =>
