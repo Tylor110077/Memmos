@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>学习知识图谱助手 - Figma Capture</title>
+    <script src="https://mcp.figma.com/mcp/html-to-design/capture.js" async></script>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="canvas">
+      <section class="artboard tokens-board">
+        <div class="board-head">
+          <div>
+            <p class="eyebrow">Design System</p>
+            <h1>学习知识图谱助手</h1>
+            <p class="subcopy">
+              基于 requirement.md 与 front_requirement.md 生成的高保真界面草案，聚焦知识工作台、图谱浏览和节点学习。
+            </p>
+          </div>
+          <div class="summary-card">
+            <span>V1 Product Scope</span>
+            <strong>分组管理 / 多源资源 / 图谱学习 / 节点问答</strong>
+          </div>
+        </div>
+
+        <div class="token-grid">
+          <article class="token-card">
+            <h2>色板</h2>
+            <div class="swatches">
+              <div class="swatch primary"><span>#4F7CFF</span><strong>Primary</strong></div>
+              <div class="swatch surface"><span>#FFFFFF</span><strong>Surface</strong></div>
+              <div class="swatch background"><span>#F6F8FB</span><strong>Background</strong></div>
+              <div class="swatch success"><span>#22C55E</span><strong>Done</strong></div>
+              <div class="swatch warning"><span>#F59E0B</span><strong>Processing</strong></div>
+              <div class="swatch error"><span>#EF4444</span><strong>Failure</strong></div>
+              <div class="swatch extend"><span>#F5F3FF</span><strong>Expansion</strong></div>
+            </div>
+          </article>
+          <article class="token-card">
+            <h2>排版</h2>
+            <div class="type-spec">
+              <p class="type-xl">页面主标题 24 / 600</p>
+              <p class="type-lg">区块标题 18 / 600</p>
+              <p class="type-md">面板标题 16 / 600</p>
+              <p class="type-base">正文 14 / 400</p>
+              <p class="type-sm">辅助信息 13 / 400</p>
+            </div>
+          </article>
+          <article class="token-card">
+            <h2>交互原则</h2>
+            <ul class="check-list">
+              <li>三栏工作台，中央画布优先</li>
+              <li>图谱节点采用圆角矩形，弱网格背景</li>
+              <li>系统扩展节点用浅紫色区分</li>
+              <li>右侧详情与对话围绕当前节点展开</li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <section class="artboard">
+        <div class="frame-title">
+          <span>Desktop / 1440</span>
+          <h2>分组列表页</h2>
+        </div>
+        <div class="workspace shell-list">
+          <aside class="sidebar">
+            <div class="brand">
+              <div class="brand-mark">KG</div>
+              <div>
+                <strong>学习知识图谱助手</strong>
+                <span>Knowledge Workspace</span>
+              </div>
+            </div>
+            <nav class="nav">
+              <a class="active">全部分组</a>
+              <a>最近访问</a>
+              <a>处理中资源</a>
+              <a>框架图谱</a>
+            </nav>
+            <div class="sidebar-section">
+              <p>最近访问</p>
+              <div class="recent-item active">
+                <strong>LLM Agent 体系</strong>
+                <span>12 个资源</span>
+              </div>
+              <div class="recent-item">
+                <strong>多模态检索设计</strong>
+                <span>7 个资源</span>
+              </div>
+            </div>
+          </aside>
+
+          <main class="main">
+            <header class="topbar">
+              <div>
+                <p class="eyebrow">Project Spaces</p>
+                <h3>分组列表</h3>
+              </div>
+              <div class="topbar-actions">
+                <div class="searchbox">搜索分组、资源或主题</div>
+                <button class="primary-btn">创建分组</button>
+              </div>
+            </header>
+
+            <section class="card-grid">
+              <article class="group-card">
+                <div class="group-card-head">
+                  <span class="group-icon">LL</span>
+                  <span class="pill blue">12 个资源</span>
+                </div>
+                <h4>LLM Agent 体系</h4>
+                <p>覆盖架构设计、执行流程、工具调用和 memory 机制。</p>
+                <div class="meta-row">
+                  <span>更新于 10:24</span>
+                  <span>框架图谱已生成</span>
+                </div>
+              </article>
+              <article class="group-card">
+                <div class="group-card-head">
+                  <span class="group-icon green">MM</span>
+                  <span class="pill neutral">7 个资源</span>
+                </div>
+                <h4>多模态检索设计</h4>
+                <p>聚合 PDF、网页和 Markdown，整理为学习导图。</p>
+                <div class="meta-row">
+                  <span>更新于 昨天</span>
+                  <span>3 项处理中</span>
+                </div>
+              </article>
+              <article class="group-card">
+                <div class="group-card-head">
+                  <span class="group-icon purple">GO</span>
+                  <span class="pill neutral">5 个资源</span>
+                </div>
+                <h4>Go + Eino 实践</h4>
+                <p>整理 API 编排、流程节点、消息上下文与执行链路。</p>
+                <div class="meta-row">
+                  <span>更新于 周三</span>
+                  <span>2 个问答会话</span>
+                </div>
+              </article>
+              <article class="group-card muted">
+                <div class="empty-state">
+                  <div class="empty-mark">+</div>
+                  <h4>新建一个学习分组</h4>
+                  <p>先创建项目空间，再上传资料与网页链接。</p>
+                </div>
+              </article>
+            </section>
+          </main>
+
+          <aside class="context">
+            <section class="panel">
+              <div class="panel-title">
+                <h4>设计意图</h4>
+              </div>
+              <p class="body-copy">
+                首页强调“项目空间”这一一级对象，让用户先理解当前系统按分组组织资料，而不是先进入单个文件。
+              </p>
+            </section>
+            <section class="panel">
+              <div class="panel-title">
+                <h4>状态分布</h4>
+              </div>
+              <div class="mini-stats">
+                <div><strong>24</strong><span>已完成资源</span></div>
+                <div><strong>3</strong><span>图谱生成中</span></div>
+                <div><strong>1</strong><span>失败待重试</span></div>
+              </div>
+            </section>
+          </aside>
+        </div>
+      </section>
+
+      <section class="artboard">
+        <div class="frame-title">
+          <span>Desktop / 1440</span>
+          <h2>分组详情页</h2>
+        </div>
+        <div class="workspace shell-detail">
+          <aside class="sidebar">
+            <div class="brand">
+              <div class="brand-mark">KG</div>
+              <div>
+                <strong>学习知识图谱助手</strong>
+                <span>Knowledge Workspace</span>
+              </div>
+            </div>
+            <nav class="nav">
+              <a>全部分组</a>
+              <a class="active">LLM Agent 体系</a>
+              <a>多模态检索设计</a>
+              <a>Go + Eino 实践</a>
+            </nav>
+          </aside>
+
+          <main class="main">
+            <header class="topbar split">
+              <div>
+                <p class="eyebrow">Group Detail</p>
+                <h3>LLM Agent 体系</h3>
+                <p class="body-copy">12 个资源，围绕 Agent 架构、规划、执行和工具调用能力建立统一学习框架。</p>
+              </div>
+              <div class="topbar-actions">
+                <button class="ghost-btn">上传网页</button>
+                <button class="ghost-btn">上传资源</button>
+                <button class="primary-btn">查看框架图谱</button>
+              </div>
+            </header>
+
+            <section class="resource-shell">
+              <div class="resource-panel">
+                <div class="section-head">
+                  <h4>资源列表</h4>
+                  <span class="muted-text">支持 PDF / DOCX / PPTX / XLSX / TXT / MD / URL</span>
+                </div>
+                <div class="resource-table">
+                  <div class="resource-row head">
+                    <span>资源名称</span>
+                    <span>类型</span>
+                    <span>上传时间</span>
+                    <span>状态</span>
+                  </div>
+                  <div class="resource-row">
+                    <strong>OpenAI Agents Cookbook.pdf</strong>
+                    <span class="pill neutral">PDF</span>
+                    <span>10:12</span>
+                    <span class="status success">已完成</span>
+                  </div>
+                  <div class="resource-row">
+                    <strong>Agent Memory System.md</strong>
+                    <span class="pill neutral">MD</span>
+                    <span>09:40</span>
+                    <span class="status success">已完成</span>
+                  </div>
+                  <div class="resource-row">
+                    <strong>Planner vs Executor.html</strong>
+                    <span class="pill neutral">网页</span>
+                    <span>08:55</span>
+                    <span class="status warning">图谱生成中</span>
+                  </div>
+                  <div class="resource-row">
+                    <strong>Function Calling Patterns.pptx</strong>
+                    <span class="pill neutral">PPTX</span>
+                    <span>昨天</span>
+                    <span class="status danger">失败</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="preview-panel">
+                <div class="section-head">
+                  <h4>分组级框架图谱预览</h4>
+                  <button class="link-btn">进入完整画布</button>
+                </div>
+                <div class="graph-preview">
+                  <div class="graph-node node-root">LLM Agent 体系</div>
+                  <div class="graph-node node-a">规划</div>
+                  <div class="graph-node node-b">工具调用</div>
+                  <div class="graph-node node-c">记忆</div>
+                  <div class="graph-node node-d">执行循环</div>
+                  <div class="edge edge-1"></div>
+                  <div class="edge edge-2"></div>
+                  <div class="edge edge-3"></div>
+                  <div class="edge edge-4"></div>
+                </div>
+              </div>
+            </section>
+          </main>
+
+          <aside class="context">
+            <section class="panel">
+              <div class="panel-title">
+                <h4>处理规则</h4>
+              </div>
+              <ul class="check-list">
+                <li>资源必须先归属于一个分组</li>
+                <li>网页会被提取正文并生成 Markdown</li>
+                <li>失败状态保留重试入口</li>
+              </ul>
+            </section>
+            <section class="panel">
+              <div class="panel-title">
+                <h4>本组概览</h4>
+              </div>
+              <div class="mini-stats">
+                <div><strong>4</strong><span>一级主题</span></div>
+                <div><strong>36</strong><span>主干节点</span></div>
+                <div><strong>12</strong><span>问答记录</span></div>
+              </div>
+            </section>
+          </aside>
+        </div>
+      </section>
+
+      <section class="artboard">
+        <div class="frame-title">
+          <span>Desktop / 1440</span>
+          <h2>资源图谱页</h2>
+        </div>
+        <div class="workspace shell-graph">
+          <aside class="sidebar graph-sidebar">
+            <button class="back-link">返回分组</button>
+            <div class="resource-card">
+              <span class="pill neutral">PDF 资源图谱</span>
+              <h4>OpenAI Agents Cookbook</h4>
+              <p>当前聚焦：工具调用与执行链路</p>
+            </div>
+            <div class="control-card">
+              <h5>层级过滤</h5>
+              <div class="segmented">
+                <span class="active">1-2</span>
+                <span>2-3</span>
+                <span>全部</span>
+              </div>
+            </div>
+            <div class="control-card">
+              <h5>显示选项</h5>
+              <label class="switch-row"><span>仅看主干</span><span class="switch on"></span></label>
+              <label class="switch-row"><span>显示扩展节点</span><span class="switch on"></span></label>
+            </div>
+            <div class="control-card">
+              <h5>节点图例</h5>
+              <div class="legend-item"><i class="legend root"></i><span>一级主题</span></div>
+              <div class="legend-item"><i class="legend level2"></i><span>二级主题</span></div>
+              <div class="legend-item"><i class="legend level3"></i><span>细化知识点</span></div>
+              <div class="legend-item"><i class="legend extend"></i><span>系统扩展节点</span></div>
+            </div>
+          </aside>
+
+          <main class="main graph-main">
+            <header class="topbar">
+              <div>
+                <p class="eyebrow">Resource Graph</p>
+                <h3>资源级知识图谱</h3>
+              </div>
+              <div class="topbar-actions">
+                <button class="ghost-btn">重新布局</button>
+                <button class="ghost-btn">缩放 100%</button>
+              </div>
+            </header>
+            <section class="graph-canvas">
+              <div class="canvas-grid"></div>
+              <div class="canvas-node selected" style="top: 140px; left: 430px">Agent 执行循环</div>
+              <div class="canvas-node level-2" style="top: 56px; left: 220px">任务规划</div>
+              <div class="canvas-node level-2" style="top: 74px; left: 670px">工具调用</div>
+              <div class="canvas-node level-3" style="top: 250px; left: 230px">Observation 反馈</div>
+              <div class="canvas-node level-3" style="top: 292px; left: 508px">Memory 注入</div>
+              <div class="canvas-node level-3" style="top: 242px; left: 760px">函数参数构造</div>
+              <div class="canvas-node extension" style="top: 364px; left: 618px">扩展：重试策略</div>
+              <div class="canvas-edge e1"></div>
+              <div class="canvas-edge e2"></div>
+              <div class="canvas-edge e3"></div>
+              <div class="canvas-edge e4"></div>
+              <div class="canvas-edge e5 extension-edge"></div>
+            </section>
+          </main>
+
+          <aside class="context chat-context">
+            <section class="panel">
+              <div class="panel-title">
+                <h4>节点详情</h4>
+                <span class="pill blue">当前节点</span>
+              </div>
+              <div class="detail-block">
+                <h5>Agent 执行循环</h5>
+                <p>表示代理从接收目标、形成计划、调用工具到观察反馈并决定下一步动作的连续过程。</p>
+              </div>
+              <div class="detail-block">
+                <h6>在当前主题中的意义</h6>
+                <p>它是整个资源的主干节点，连接规划、工具调用和记忆上下文，是理解 Agent 行为闭环的关键。</p>
+              </div>
+              <div class="detail-block">
+                <h6>相关例子</h6>
+                <p>例如：先检索知识库，再根据返回内容调用函数，随后将结果写入会话记忆。</p>
+              </div>
+              <button class="primary-btn block">生成直接相关扩展节点</button>
+            </section>
+            <section class="panel chat-panel">
+              <div class="panel-title">
+                <h4>侧边栏对话</h4>
+              </div>
+              <div class="chat-msg ai">
+                <span class="role">系统</span>
+                <p>当前回答会围绕“Agent 执行循环”，并结合本分组背景知识解释。</p>
+              </div>
+              <div class="chat-msg user">
+                <span class="role">你</span>
+                <p>它和工具调用节点是什么关系？</p>
+              </div>
+              <div class="chat-msg ai">
+                <span class="role">助理</span>
+                <p>工具调用是执行循环中的一个关键阶段，用于把内部推理转化为外部能力访问。</p>
+              </div>
+              <div class="chat-input">继续追问当前节点的意义、例子或相邻关系</div>
+            </section>
+          </aside>
+        </div>
+      </section>
+
+      <section class="artboard">
+        <div class="frame-title">
+          <span>Desktop / 1440</span>
+          <h2>框架图谱页</h2>
+        </div>
+        <div class="workspace shell-framework">
+          <aside class="sidebar graph-sidebar">
+            <div class="resource-card">
+              <span class="pill blue">Group Overview</span>
+              <h4>LLM Agent 体系框架</h4>
+              <p>高层结构视图，用于建立整体认知而不是查看细节。</p>
+            </div>
+            <div class="control-card">
+              <h5>显示层级</h5>
+              <div class="segmented">
+                <span class="active">一级</span>
+                <span>一级-二级</span>
+                <span>全部</span>
+              </div>
+            </div>
+          </aside>
+
+          <main class="main graph-main">
+            <header class="topbar">
+              <div>
+                <p class="eyebrow">Framework Graph</p>
+                <h3>分组级框架图谱</h3>
+              </div>
+              <div class="topbar-actions">
+                <button class="ghost-btn">聚焦整体</button>
+              </div>
+            </header>
+            <section class="framework-canvas">
+              <div class="framework-core">LLM Agent 体系</div>
+              <div class="framework-ring ring-a">规划与分解</div>
+              <div class="framework-ring ring-b">执行与反馈</div>
+              <div class="framework-ring ring-c">工具调用</div>
+              <div class="framework-ring ring-d">记忆与上下文</div>
+              <div class="framework-ring ring-e">评估与安全</div>
+              <div class="framework-link l1"></div>
+              <div class="framework-link l2"></div>
+              <div class="framework-link l3"></div>
+              <div class="framework-link l4"></div>
+              <div class="framework-link l5"></div>
+            </section>
+          </main>
+
+          <aside class="context">
+            <section class="panel">
+              <div class="panel-title">
+                <h4>高层节点说明</h4>
+              </div>
+              <div class="detail-block">
+                <h5>执行与反馈</h5>
+                <p>连接规划、工具调用与观察结果，是多个资源中反复出现的共性主线。</p>
+              </div>
+            </section>
+            <section class="panel">
+              <div class="panel-title">
+                <h4>使用目标</h4>
+              </div>
+              <ul class="check-list">
+                <li>帮助用户先建立整体骨架</li>
+                <li>发现资源之间的交叉主题</li>
+                <li>作为资源级图谱的导航入口</li>
+              </ul>
+            </section>
+          </aside>
+        </div>
+      </section>
+    </div>
+  </body>
+</html>

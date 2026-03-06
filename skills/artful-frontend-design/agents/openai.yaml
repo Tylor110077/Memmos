@@ -1,0 +1,4 @@
+interface:
+  display_name: "Artful Frontend Design"
+  short_description: "Design striking, art-directed web frontends"
+  default_prompt: "Use $artful-frontend-design to design a visually distinctive, functional frontend with a clear theme, palette, typography, motion, and layout direction."
