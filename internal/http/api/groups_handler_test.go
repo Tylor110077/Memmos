@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +10,9 @@ import (
 	"testing"
 
 	appgroup "github.com/tylor/goaipj/internal/app/group"
+	appresource "github.com/tylor/goaipj/internal/app/resource"
+	domainresource "github.com/tylor/goaipj/internal/domain/resource"
+	"github.com/tylor/goaipj/internal/infra/storage"
 )
 
 func TestGroupsCRUD(t *testing.T) {
@@ -62,6 +66,72 @@ func TestGroupsCRUD(t *testing.T) {
 	missingResp := performJSONRequest(t, server, http.MethodGet, "/api/v1/groups/"+created.ID, nil)
 	if missingResp.Code != http.StatusNotFound {
 		t.Fatalf("missing status = %d, want 404", missingResp.Code)
+	}
+}
+
+func TestGroupsIncludeResourceCounts(t *testing.T) {
+	groupService := appgroup.NewService(appgroup.NewInMemoryRepository())
+	group, err := groupService.CreateGroup(context.Background(), appgroup.CreateGroupInput{Name: "Backend Group"})
+	if err != nil {
+		t.Fatalf("CreateGroup() error = %v", err)
+	}
+
+	resourceRepo := appresource.NewInMemoryRepository()
+	resourceService := appresource.NewService(
+		groupService,
+		resourceRepo,
+		appresource.NewInMemoryArtifactRepository(),
+		appresource.NewInMemoryJobPublisher(),
+		storage.NewStore(newHTTPFakeBucketClient(), "bucket"),
+	)
+
+	completed, err := domainresource.NewWeb(group.ID, "https://example.com/completed")
+	if err != nil {
+		t.Fatalf("NewWeb() error = %v", err)
+	}
+	completed.ID = "res-completed"
+	if err := completed.MoveTo(domainresource.StatusParsing, domainresource.Failure{}); err != nil {
+		t.Fatalf("MoveTo(parsing) error = %v", err)
+	}
+	if err := completed.MoveTo(domainresource.StatusNormalizing, domainresource.Failure{}); err != nil {
+		t.Fatalf("MoveTo(normalizing) error = %v", err)
+	}
+	if err := completed.MoveTo(domainresource.StatusGraphGenerating, domainresource.Failure{}); err != nil {
+		t.Fatalf("MoveTo(graph_generating) error = %v", err)
+	}
+	if err := completed.MoveTo(domainresource.StatusCompleted, domainresource.Failure{}); err != nil {
+		t.Fatalf("MoveTo(completed) error = %v", err)
+	}
+	if err := resourceRepo.Create(context.Background(), *completed); err != nil {
+		t.Fatalf("resourceRepo.Create() error = %v", err)
+	}
+
+	uploaded, err := domainresource.NewWeb(group.ID, "https://example.com/uploaded")
+	if err != nil {
+		t.Fatalf("NewWeb() error = %v", err)
+	}
+	uploaded.ID = "res-uploaded"
+	if err := resourceRepo.Create(context.Background(), *uploaded); err != nil {
+		t.Fatalf("resourceRepo.Create() error = %v", err)
+	}
+
+	server := NewServer(Dependencies{
+		GroupService:    groupService,
+		ResourceService: resourceService,
+	})
+
+	resp := performJSONRequest(t, server, http.MethodGet, "/api/v1/groups/"+group.ID, nil)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", resp.Code, resp.Body.String())
+	}
+
+	var got groupResponse
+	decodeJSONResponse(t, resp, &got)
+	if got.ResourceCount != 2 {
+		t.Fatalf("resource_count = %d, want 2", got.ResourceCount)
+	}
+	if got.CompletedResourceCount != 1 {
+		t.Fatalf("completed_resource_count = %d, want 1", got.CompletedResourceCount)
 	}
 }
 

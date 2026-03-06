@@ -50,10 +50,17 @@ func TestResourceEndpoints(t *testing.T) {
 	}
 
 	webResp := performJSONRequest(t, server, http.MethodPost, "/api/v1/groups/"+group.ID+"/web-resources", map[string]any{
-		"url": "https://example.com/page",
+		"url":  "https://example.com/page",
+		"name": "Live Web Resource",
 	})
 	if webResp.Code != http.StatusCreated {
 		t.Fatalf("web status = %d body=%s", webResp.Code, webResp.Body.String())
+	}
+
+	var webCreated resourceWithJobResponse
+	decodeJSONResponse(t, webResp, &webCreated)
+	if webCreated.Resource.Name != "Live Web Resource" {
+		t.Fatalf("web resource name = %q, want Live Web Resource", webCreated.Resource.Name)
 	}
 
 	listResp := performJSONRequest(t, server, http.MethodGet, "/api/v1/groups/"+group.ID+"/resources", nil)
@@ -65,6 +72,9 @@ func TestResourceEndpoints(t *testing.T) {
 	decodeJSONResponse(t, listResp, &list)
 	if len(list) != 2 {
 		t.Fatalf("len(list) = %d, want 2", len(list))
+	}
+	if list[1].Name != "Live Web Resource" {
+		t.Fatalf("list web resource name = %q, want Live Web Resource", list[1].Name)
 	}
 
 	getResp := performJSONRequest(t, server, http.MethodGet, "/api/v1/groups/"+group.ID+"/resources/"+created.Resource.ID, nil)

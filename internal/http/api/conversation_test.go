@@ -103,8 +103,14 @@ func TestConversationEndpoints(t *testing.T) {
 		t.Fatalf("get status = %d body=%s", getResp.Code, getResp.Body.String())
 	}
 
-	var stored conversationResponse
+	var stored struct {
+		Conversation conversationSummaryResponse   `json:"conversation"`
+		Messages     []conversationMessageResponse `json:"messages"`
+	}
 	decodeJSONResponse(t, getResp, &stored)
+	if stored.Conversation.ID != created.ID {
+		t.Fatalf("conversation id = %q, want %q", stored.Conversation.ID, created.ID)
+	}
 	if len(stored.Messages) != 2 {
 		t.Fatalf("len(messages) = %d, want 2", len(stored.Messages))
 	}

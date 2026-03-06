@@ -67,6 +67,7 @@ type UploadFileInput struct {
 type CreateWebResourceInput struct {
 	GroupID string
 	URL     string
+	Name    string
 }
 
 type GroupLookup interface {
@@ -161,7 +162,7 @@ func (s *Service) CreateWebResource(ctx context.Context, input CreateWebResource
 		return ResourceWithJob{}, apperror.New(apperror.CodeNotFound, "group not found")
 	}
 
-	entity, err := domainresource.NewWeb(input.GroupID, input.URL)
+	entity, err := domainresource.NewNamedWeb(input.GroupID, input.URL, input.Name)
 	if err != nil {
 		return ResourceWithJob{}, mapDomainError(err)
 	}

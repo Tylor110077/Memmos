@@ -18,6 +18,7 @@ import (
 	appgroup "github.com/tylor/goaipj/internal/app/group"
 	appjob "github.com/tylor/goaipj/internal/app/job"
 	appresource "github.com/tylor/goaipj/internal/app/resource"
+	domainresource "github.com/tylor/goaipj/internal/domain/resource"
 	"github.com/tylor/goaipj/internal/infra/apperror"
 	infraevent "github.com/tylor/goaipj/internal/infra/event"
 	"github.com/tylor/goaipj/internal/infra/monitoring"
@@ -165,6 +166,16 @@ type expandNodeResponse struct {
 	Job jobResponse `json:"job"`
 }
 
+type conversationSummaryResponse struct {
+	ID            string                        `json:"id"`
+	GroupID       string                        `json:"group_id"`
+	GraphID       string                        `json:"graph_id"`
+	CurrentNodeID string                        `json:"current_node_id"`
+	Title         string                        `json:"title"`
+	CreatedAt     string                        `json:"created_at"`
+	UpdatedAt     string                        `json:"updated_at"`
+}
+
 type conversationResponse struct {
 	ID            string                        `json:"id"`
 	GroupID       string                        `json:"group_id"`
@@ -173,6 +184,11 @@ type conversationResponse struct {
 	Title         string                        `json:"title"`
 	CreatedAt     string                        `json:"created_at"`
 	UpdatedAt     string                        `json:"updated_at"`
+	Messages      []conversationMessageResponse `json:"messages"`
+}
+
+type conversationDetailResponse struct {
+	Conversation conversationSummaryResponse    `json:"conversation"`
 	Messages      []conversationMessageResponse `json:"messages"`
 }
 
@@ -294,7 +310,7 @@ func (s *Server) handleGroups(w http.ResponseWriter, r *http.Request) {
 
 		resp := make([]groupResponse, 0, len(groups))
 		for _, item := range groups {
-			resp = append(resp, toGroupResponse(item))
+			resp = append(resp, s.toGroupResponse(r.Context(), item))
 		}
 		writeJSON(w, http.StatusOK, resp)
 	case http.MethodPost:
@@ -311,7 +327,7 @@ func (s *Server) handleGroups(w http.ResponseWriter, r *http.Request) {
 			writeError(w, r, err)
 			return
 		}
-		writeJSON(w, http.StatusCreated, toGroupResponse(group))
+		writeJSON(w, http.StatusCreated, s.toGroupResponse(r.Context(), group))
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	}
@@ -337,7 +353,7 @@ func (s *Server) handleGroupByID(w http.ResponseWriter, r *http.Request) {
 			writeError(w, r, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, toGroupResponse(group))
+		writeJSON(w, http.StatusOK, s.toGroupResponse(r.Context(), group))
 	case http.MethodPatch:
 		var req struct {
 			Name string `json:"name"`
@@ -352,7 +368,7 @@ func (s *Server) handleGroupByID(w http.ResponseWriter, r *http.Request) {
 			writeError(w, r, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, toGroupResponse(group))
+		writeJSON(w, http.StatusOK, s.toGroupResponse(r.Context(), group))
 	case http.MethodDelete:
 		if err := s.groupService.DeleteGroup(r.Context(), groupID); err != nil {
 			writeError(w, r, err)
@@ -496,7 +512,7 @@ func (s *Server) handleConversationByID(w http.ResponseWriter, r *http.Request) 
 			writeError(w, r, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, toConversationResponse(conversation))
+		writeJSON(w, http.StatusOK, toConversationDetailResponse(conversation))
 		return
 	}
 	if len(parts) == 2 && parts[1] == "messages" && r.Method == http.MethodPost {
@@ -641,17 +657,19 @@ func (s *Server) handleUploadResource(w http.ResponseWriter, r *http.Request, gr
 }
 
 func (s *Server) handleCreateWebResource(w http.ResponseWriter, r *http.Request, groupID string) {
-	var req struct {
-		URL string `json:"url"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		var req struct {
+			URL  string `json:"url"`
+			Name string `json:"name"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, r, apperror.New(apperror.CodeInvalidArgument, "invalid json body"))
 		return
 	}
-	result, err := s.resourceService.CreateWebResource(r.Context(), appresource.CreateWebResourceInput{
-		GroupID: groupID,
-		URL:     req.URL,
-	})
+		result, err := s.resourceService.CreateWebResource(r.Context(), appresource.CreateWebResourceInput{
+			GroupID: groupID,
+			URL:     req.URL,
+			Name:    req.Name,
+		})
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -940,16 +958,28 @@ func (s *Server) handleExpandNode(w http.ResponseWriter, r *http.Request, graphI
 	})
 }
 
-func toGroupResponse(group appgroup.Group) groupResponse {
-	return groupResponse{
+func (s *Server) toGroupResponse(ctx context.Context, group appgroup.Group) groupResponse {
+	resp := groupResponse{
 		Description:            nil,
 		ID:                     group.ID,
 		Name:                   group.Name,
-		ResourceCount:          0,
-		CompletedResourceCount: 0,
 		CreatedAt:              group.CreatedAt.Format(time.RFC3339Nano),
 		UpdatedAt:              group.UpdatedAt.Format(time.RFC3339Nano),
 	}
+	if s.resourceService == nil {
+		return resp
+	}
+	items, err := s.resourceService.ListResources(ctx, group.ID)
+	if err != nil {
+		return resp
+	}
+	resp.ResourceCount = len(items)
+	for _, item := range items {
+		if item.Status == domainresource.StatusCompleted {
+			resp.CompletedResourceCount++
+		}
+	}
+	return resp
 }
 
 func toResourceResponse(item appresource.Resource) resourceResponse {
@@ -1083,6 +1113,25 @@ func toConversationResponse(conversation appchat.Conversation) conversationRespo
 		CreatedAt:     conversation.CreatedAt.Format(time.RFC3339Nano),
 		UpdatedAt:     conversation.UpdatedAt.Format(time.RFC3339Nano),
 		Messages:      make([]conversationMessageResponse, 0, len(conversation.Messages)),
+	}
+	for _, message := range conversation.Messages {
+		resp.Messages = append(resp.Messages, toConversationMessageResponse(message))
+	}
+	return resp
+}
+
+func toConversationDetailResponse(conversation appchat.Conversation) conversationDetailResponse {
+	resp := conversationDetailResponse{
+		Conversation: conversationSummaryResponse{
+			ID:            conversation.ID,
+			GroupID:       conversation.GroupID,
+			GraphID:       conversation.GraphID,
+			CurrentNodeID: conversation.CurrentNodeID,
+			Title:         conversation.Title,
+			CreatedAt:     conversation.CreatedAt.Format(time.RFC3339Nano),
+			UpdatedAt:     conversation.UpdatedAt.Format(time.RFC3339Nano),
+		},
+		Messages: make([]conversationMessageResponse, 0, len(conversation.Messages)),
 	}
 	for _, message := range conversation.Messages {
 		resp.Messages = append(resp.Messages, toConversationMessageResponse(message))

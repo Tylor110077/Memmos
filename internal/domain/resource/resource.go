@@ -87,6 +87,10 @@ func NewFile(groupID, name string) (*Resource, error) {
 }
 
 func NewWeb(groupID, rawURL string) (*Resource, error) {
+	return NewNamedWeb(groupID, rawURL, "")
+}
+
+func NewNamedWeb(groupID, rawURL, name string) (*Resource, error) {
 	groupID = strings.TrimSpace(groupID)
 	if groupID == "" {
 		return nil, ErrInvalidGroupID
@@ -97,10 +101,15 @@ func NewWeb(groupID, rawURL string) (*Resource, error) {
 		return nil, ErrInvalidURL
 	}
 
+	name = strings.TrimSpace(name)
+	if name == "" {
+		name = parsed.String()
+	}
+
 	now := time.Now().UTC()
 	return &Resource{
 		GroupID:   groupID,
-		Name:      parsed.String(),
+		Name:      name,
 		Type:      TypeWeb,
 		Status:    StatusUploaded,
 		SourceURL: parsed.String(),
