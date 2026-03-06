@@ -1,5 +1,4 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { type PropsWithChildren, useState } from "react";
 import { ToastProvider } from "@/components/feedback/ToastProvider";
 
@@ -21,7 +20,6 @@ export function AppProviders({ children }: PropsWithChildren) {
     <QueryClientProvider client={queryClient}>
       <ToastProvider>
         {children}
-        <ReactQueryDevtools initialIsOpen={false} />
       </ToastProvider>
     </QueryClientProvider>
   );

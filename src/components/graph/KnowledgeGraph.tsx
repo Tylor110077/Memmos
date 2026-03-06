@@ -117,6 +117,7 @@ export function KnowledgeGraph({ graph, selectedNodeId, onSelectNode }: Knowledg
           className: nodeClassName[node.id],
         }))}
         edges={edges}
+        proOptions={{ hideAttribution: true }}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onNodeClick={(_, node) => onSelectNode?.(node.id)}
