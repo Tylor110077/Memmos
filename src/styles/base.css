@@ -231,6 +231,12 @@ h6 {
   font-weight: 600;
 }
 
+.nav a:hover,
+.recent-item:hover {
+  background: rgba(79, 124, 255, 0.08);
+  color: var(--primary-strong);
+}
+
 .sidebar-section {
   margin-top: 28px;
   display: grid;
@@ -507,18 +513,20 @@ h6 {
 
 .resource-row {
   display: grid;
-  grid-template-columns: 1.65fr 0.55fr 0.6fr 0.7fr;
+  grid-template-columns: minmax(0, 1.9fr) 96px 112px minmax(148px, 0.9fr);
   gap: 14px;
   padding: 14px 16px;
   border-radius: 14px;
   background: #fbfcfe;
   border: 1px solid var(--line);
+  align-items: center;
 }
 
 .resource-row.head {
   background: transparent;
   color: var(--weak);
   border-style: dashed;
+  align-items: start;
 }
 
 .resource-row-item strong {
@@ -526,10 +534,30 @@ h6 {
   margin-bottom: 4px;
 }
 
+.resource-name-cell {
+  min-width: 0;
+}
+
+.resource-type-cell {
+  display: flex;
+  justify-content: center;
+}
+
+.resource-time-cell {
+  color: var(--text-soft);
+}
+
+.resource-meta-cell {
+  display: grid;
+  justify-items: end;
+  gap: 10px;
+}
+
 .table-actions {
   display: flex;
   gap: 10px;
   justify-content: flex-end;
+  align-items: center;
 }
 
 .status {
@@ -611,6 +639,11 @@ h6 {
   background: linear-gradient(180deg, #f9fbfe 0%, #f4f7fb 100%);
 }
 
+.graph-flow-shell-preview .react-flow__renderer,
+.graph-flow-shell-preview .react-flow__viewport {
+  inset: 0;
+}
+
 .graph-flow-shell .react-flow__panel {
   margin: 16px;
 }
@@ -636,6 +669,13 @@ h6 {
   text-align: center;
   font-weight: 600;
   box-shadow: var(--shadow-sm);
+}
+
+.rf-node-card.preview {
+  min-width: 92px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  font-size: 12px;
 }
 
 .rf-node-card.level-root {

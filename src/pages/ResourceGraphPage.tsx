@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useToast } from "@/components/feedback/ToastProvider";
 import { AppChrome } from "@/components/layout/AppChrome";
@@ -9,6 +9,8 @@ import { StateBlock } from "@/components/ui/StateBlock";
 import { useConversation, useCreateConversation, useStreamMessage } from "@/hooks/useConversation";
 import { useExpandNode, useNodeDetail, useResourceGraph } from "@/hooks/useGraphs";
 import { useGroupEvents } from "@/hooks/useGroupEvents";
+import { useGroupSidebar } from "@/hooks/useGroupSidebar";
+import { useTrackRecentGroup } from "@/hooks/useRecentGroups";
 import { useResourceDetail } from "@/hooks/useResources";
 import { useGraphWorkbenchStore } from "@/store/graphWorkbench";
 import type { ConversationMessage } from "@/api/types";
@@ -22,6 +24,8 @@ export function ResourceGraphPage() {
   const { pushToast } = useToast();
   const resourceQuery = useResourceDetail(resourceId);
   useGroupEvents(groupId);
+  useTrackRecentGroup(groupId);
+  const { navItems: sidebarNav, recentItems } = useGroupSidebar(groupId);
   const { selectedNodeId, includeExpansion, maxLevel, setSelectedNodeId, setIncludeExpansion, setMaxLevel, reset } =
     useGraphWorkbenchStore();
   const graphQuery = useResourceGraph(resourceId, { includeExpansion, maxLevel });
@@ -49,15 +53,6 @@ export function ResourceGraphPage() {
     ...(streamingMessage ? [streamingMessage] : []),
   ];
   const resource = resourceQuery.data;
-
-  const navItems = useMemo(
-    () => [
-      { label: "返回分组", to: `/groups/${groupId}`, active: true },
-      { label: resource?.name ?? "当前资源" },
-      { label: "资源图谱" },
-    ],
-    [groupId, resource?.name],
-  );
 
   async function ensureConversation() {
     if (conversationId) {
@@ -133,7 +128,8 @@ export function ResourceGraphPage() {
   if (resource?.status === "failed") {
     return (
       <AppChrome
-        navItems={navItems}
+        navItems={sidebarNav}
+        recentItems={recentItems}
         sidebarClassName="graph-sidebar"
         workspaceClassName="shell-graph"
         main={
@@ -150,7 +146,8 @@ export function ResourceGraphPage() {
   if (resource && resource.status !== "completed") {
     return (
       <AppChrome
-        navItems={navItems}
+        navItems={sidebarNav}
+        recentItems={recentItems}
         sidebarClassName="graph-sidebar"
         workspaceClassName="shell-graph"
         main={<StateBlock title="图谱生成中" description="资源尚未完成处理，图谱会在后端任务完成后自动可见。" />}
@@ -161,7 +158,8 @@ export function ResourceGraphPage() {
 
   return (
     <AppChrome
-      navItems={navItems}
+      navItems={sidebarNav}
+      recentItems={recentItems}
       sidebarClassName="graph-sidebar"
       workspaceClassName="shell-graph"
       sidebarFooter={

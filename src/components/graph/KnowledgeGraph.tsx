@@ -9,6 +9,7 @@ import {
   ReactFlow,
   type Edge,
   type Node,
+  type ReactFlowInstance,
   useEdgesState,
   useNodesState,
 } from "@xyflow/react";
@@ -24,19 +25,20 @@ type KnowledgeGraphProps = {
   variant?: "default" | "preview";
 };
 
-async function layoutGraph(graph: GraphView) {
+async function layoutGraph(graph: GraphView, variant: "default" | "preview") {
+  const isPreview = variant === "preview";
   const layout = await elk.layout({
     id: "root",
     layoutOptions: {
       "elk.algorithm": "layered",
       "elk.direction": "DOWN",
-      "elk.layered.spacing.nodeNodeBetweenLayers": "60",
-      "elk.spacing.nodeNode": "32",
+      "elk.layered.spacing.nodeNodeBetweenLayers": isPreview ? "28" : "60",
+      "elk.spacing.nodeNode": isPreview ? "18" : "32",
     },
     children: graph.nodes.map((node) => ({
       id: node.id,
-      width: node.level === 1 ? 220 : 180,
-      height: node.level === 3 ? 64 : 72,
+      width: isPreview ? (node.level === 1 ? 132 : 104) : node.level === 1 ? 220 : 180,
+      height: isPreview ? 48 : node.level === 3 ? 64 : 72,
     })),
     edges: graph.edges.map((edge) => ({
       id: edge.id,
@@ -68,10 +70,11 @@ export function KnowledgeGraph({
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [ready, setReady] = useState(false);
+  const [flowInstance, setFlowInstance] = useState<ReactFlowInstance<Node, Edge> | null>(null);
 
   useEffect(() => {
     let active = true;
-    void layoutGraph(graph).then((layoutedNodes) => {
+    void layoutGraph(graph, variant).then((layoutedNodes) => {
       if (!active) return;
       setNodes(layoutedNodes);
       setEdges(
@@ -96,7 +99,20 @@ export function KnowledgeGraph({
       active = false;
       setReady(false);
     };
-  }, [graph, setEdges, setNodes]);
+  }, [graph, setEdges, setNodes, variant]);
+
+  useEffect(() => {
+    if (!flowInstance || !ready || !nodes.length) return;
+
+    requestAnimationFrame(() => {
+      flowInstance.fitView({
+        padding: variant === "preview" ? 0.18 : 0.18,
+        minZoom: variant === "preview" ? 0.32 : 0.35,
+        maxZoom: variant === "preview" ? 1.1 : 1.2,
+        duration: 180,
+      });
+    });
+  }, [flowInstance, nodes.length, ready, variant]);
 
   const nodeClassName = useMemo(
     () =>
@@ -104,6 +120,7 @@ export function KnowledgeGraph({
         const data = node.data as { level: number; isExpansion: boolean };
         accumulator[node.id] = cn(
           "rf-node-card",
+          variant === "preview" && "preview",
           data.level === 1 && "level-root",
           data.level === 2 && "level-2",
           data.level >= 3 && "level-3",
@@ -112,7 +129,7 @@ export function KnowledgeGraph({
         );
         return accumulator;
       }, {}),
-    [nodes, selectedNodeId],
+    [nodes, selectedNodeId, variant],
   );
 
   return (
@@ -124,6 +141,7 @@ export function KnowledgeGraph({
         }))}
         edges={edges}
         proOptions={{ hideAttribution: true }}
+        onInit={setFlowInstance}
         nodesDraggable={variant !== "preview"}
         nodesConnectable={false}
         elementsSelectable={variant !== "preview"}
@@ -137,9 +155,11 @@ export function KnowledgeGraph({
         <Background color="rgba(148, 163, 184, 0.22)" gap={28} />
         {variant === "default" ? <MiniMap pannable zoomable /> : null}
         {variant === "default" ? <Controls /> : null}
-        <Panel position="top-left">
-          <div className="graph-panel-tag">{graph.graph.summary ?? "知识图谱"}</div>
-        </Panel>
+        {variant === "default" ? (
+          <Panel position="top-left">
+            <div className="graph-panel-tag">{graph.graph.summary ?? "知识图谱"}</div>
+          </Panel>
+        ) : null}
       </ReactFlow>
     </div>
   );

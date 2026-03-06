@@ -6,19 +6,21 @@ import { StateBlock } from "@/components/ui/StateBlock";
 import { useFrameworkGraph } from "@/hooks/useGraphs";
 import { useGroupEvents } from "@/hooks/useGroupEvents";
 import { useGroupDetail } from "@/hooks/useGroups";
+import { useGroupSidebar } from "@/hooks/useGroupSidebar";
+import { useTrackRecentGroup } from "@/hooks/useRecentGroups";
 
 export function FrameworkGraphPage() {
   const { groupId = "" } = useParams();
   const groupQuery = useGroupDetail(groupId);
   const graphQuery = useFrameworkGraph(groupId, 2);
   useGroupEvents(groupId);
+  useTrackRecentGroup(groupId);
+  const { navItems, recentItems } = useGroupSidebar(groupId);
 
   return (
     <AppChrome
-      navItems={[
-        { label: "返回分组", to: `/groups/${groupId}`, active: true },
-        { label: `${groupQuery.data?.name ?? "当前分组"}框架图谱` },
-      ]}
+      navItems={navItems}
+      recentItems={recentItems}
       sidebarClassName="graph-sidebar"
       workspaceClassName="shell-framework"
       sidebarFooter={

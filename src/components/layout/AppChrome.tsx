@@ -58,10 +58,17 @@ export function AppChrome({
             <div className="sidebar-section">
               <p>最近访问</p>
               {recentItems.map((item) => (
-                <div key={item.label} className={cn("recent-item", item.active && "active")}>
-                  <strong>{item.label}</strong>
-                  <span>{item.meta}</span>
-                </div>
+                item.to ? (
+                  <Link key={item.label} className={cn("recent-item", item.active && "active")} to={item.to}>
+                    <strong>{item.label}</strong>
+                    <span>{item.meta}</span>
+                  </Link>
+                ) : (
+                  <div key={item.label} className={cn("recent-item", item.active && "active")}>
+                    <strong>{item.label}</strong>
+                    <span>{item.meta}</span>
+                  </div>
+                )
               ))}
             </div>
           ) : null}

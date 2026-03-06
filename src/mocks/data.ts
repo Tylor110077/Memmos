@@ -12,6 +12,10 @@ import type {
 
 const now = "2026-03-06T12:00:00Z";
 
+function currentTimestamp() {
+  return new Date().toISOString();
+}
+
 export let groups: GroupDetail[] = [
   {
     id: "grp_agent",
@@ -493,23 +497,25 @@ export function listResources(groupId: string): ResourceSummary[] {
 }
 
 export function addGroup(payload: { name: string; description?: string }) {
+  const timestamp = currentTimestamp();
   const group: GroupDetail = {
     id: `grp_${Date.now()}`,
     name: payload.name,
     description: payload.description ?? null,
     resource_count: 0,
     completed_resource_count: 0,
-    created_at: now,
-    updated_at: now,
+    created_at: timestamp,
+    updated_at: timestamp,
   };
   groups = [group, ...groups];
   return group;
 }
 
 export function patchGroup(groupId: string, payload: { name: string; description?: string }) {
+  const timestamp = currentTimestamp();
   groups = groups.map((group) =>
     group.id === groupId
-      ? { ...group, name: payload.name, description: payload.description ?? null, updated_at: now }
+      ? { ...group, name: payload.name, description: payload.description ?? null, updated_at: timestamp }
       : group,
   );
   return groups.find((group) => group.id === groupId) ?? null;
@@ -520,6 +526,7 @@ export function removeGroup(groupId: string) {
 }
 
 export function addWebResource(groupId: string, payload: { url: string; name?: string }) {
+  const timestamp = currentTimestamp();
   const detail: ResourceDetail = {
     id: `res_${Date.now()}`,
     group_id: groupId,
@@ -532,8 +539,8 @@ export function addWebResource(groupId: string, payload: { url: string; name?: s
     failed_stage: null,
     latest_job_id: `job_${Date.now()}`,
     latest_graph_id: null,
-    created_at: now,
-    updated_at: now,
+    created_at: timestamp,
+    updated_at: timestamp,
   };
   resources = [detail, ...resources];
   groups = groups.map((group) => (group.id === groupId ? { ...group, resource_count: group.resource_count + 1 } : group));
@@ -541,6 +548,7 @@ export function addWebResource(groupId: string, payload: { url: string; name?: s
 }
 
 export function addUploadResource(groupId: string, name: string) {
+  const timestamp = currentTimestamp();
   const detail: ResourceDetail = {
     id: `res_${Date.now()}`,
     group_id: groupId,
@@ -553,8 +561,8 @@ export function addUploadResource(groupId: string, name: string) {
     failed_stage: null,
     latest_job_id: `job_${Date.now()}`,
     latest_graph_id: null,
-    created_at: now,
-    updated_at: now,
+    created_at: timestamp,
+    updated_at: timestamp,
   };
   resources = [detail, ...resources];
   groups = groups.map((group) => (group.id === groupId ? { ...group, resource_count: group.resource_count + 1 } : group));
@@ -572,6 +580,7 @@ export function removeResource(resourceId: string) {
 }
 
 export function retryResourceJob(resourceId: string) {
+  const timestamp = currentTimestamp();
   resources = resources.map((resource) =>
     resource.id === resourceId
       ? {
@@ -581,7 +590,7 @@ export function retryResourceJob(resourceId: string) {
           error_message: null,
           failed_stage: null,
           latest_job_id: `job_${Date.now()}`,
-          updated_at: now,
+          updated_at: timestamp,
         }
       : resource,
   );
@@ -589,6 +598,7 @@ export function retryResourceJob(resourceId: string) {
 }
 
 export function appendConversationMessage(conversationId: string, currentNodeId: string, content: string) {
+  const timestamp = currentTimestamp();
   const conversationEntry = conversations[conversationId];
   const userMessage: ConversationMessage = {
     id: `msg_user_${Date.now()}`,
@@ -597,7 +607,7 @@ export function appendConversationMessage(conversationId: string, currentNodeId:
     role: "user",
     content,
     citations: { chunk_ids: [], node_ids: [] },
-    created_at: now,
+    created_at: timestamp,
   };
   const assistantMessage: ConversationMessage = {
     id: `msg_ai_${Date.now()}`,
@@ -606,7 +616,7 @@ export function appendConversationMessage(conversationId: string, currentNodeId:
     role: "assistant",
     content: "这个节点在当前知识结构中承担主干解释作用，并把相关概念串成可追问的学习链路。",
     citations: { chunk_ids: ["chunk_001"], node_ids: ["node_tool"] },
-    created_at: now,
+    created_at: timestamp,
   };
   conversationEntry.messages = [...conversationEntry.messages, userMessage, assistantMessage];
   return { user_message: userMessage, assistant_message: assistantMessage };

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useToast } from "@/components/feedback/ToastProvider";
 import { AppChrome } from "@/components/layout/AppChrome";
@@ -11,6 +11,8 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { useFrameworkGraph, useGenerateFrameworkGraph } from "@/hooks/useGraphs";
 import { useGroupEvents } from "@/hooks/useGroupEvents";
 import { useGroupDetail } from "@/hooks/useGroups";
+import { useGroupSidebar } from "@/hooks/useGroupSidebar";
+import { useTrackRecentGroup } from "@/hooks/useRecentGroups";
 import {
   useCreateWebResource,
   useDeleteResource,
@@ -40,19 +42,11 @@ export function GroupDetailPage() {
   const deleteMutation = useDeleteResource(groupId);
   const regenerateMutation = useGenerateFrameworkGraph(groupId);
   useGroupEvents(groupId);
+  useTrackRecentGroup(groupId);
+  const { navItems: sidebarNav, recentItems } = useGroupSidebar(groupId);
 
   const group = groupQuery.data;
   const resources = resourcesQuery.data?.items ?? [];
-
-  const sidebarNav = useMemo(
-    () => [
-      { label: "全部分组", to: "/groups" },
-      { label: group?.name ?? "当前分组", active: true },
-      { label: "多模态检索设计" },
-      { label: "Go + Eino 实践" },
-    ],
-    [group?.name],
-  );
 
   async function handleUploadSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -91,6 +85,7 @@ export function GroupDetailPage() {
     <>
       <AppChrome
         navItems={sidebarNav}
+        recentItems={recentItems}
         main={
           <>
             <header className="topbar split">
@@ -128,20 +123,22 @@ export function GroupDetailPage() {
                 ) : resources.length ? (
                   <div className="resource-table">
                     <div className="resource-row head">
-                      <span>资源名称</span>
-                      <span>类型</span>
-                      <span>更新时间</span>
-                      <span>状态</span>
+                      <span className="resource-name-cell">资源名称</span>
+                      <span className="resource-type-cell">类型</span>
+                      <span className="resource-time-cell">上传时间</span>
+                      <span className="resource-meta-cell">状态</span>
                     </div>
                     {resources.map((resource) => (
                       <div key={resource.id} className="resource-row resource-row-item">
-                        <div>
+                        <div className="resource-name-cell">
                           <strong>{resource.name}</strong>
                           {resource.error_message ? <p className="danger-text body-copy">{resource.error_message}</p> : null}
                         </div>
-                        <span className="pill neutral">{resource.resource_type.toUpperCase()}</span>
-                        <span>{formatDateLabel(resource.updated_at)}</span>
-                        <div className="resource-status-actions">
+                        <div className="resource-type-cell">
+                          <span className="pill neutral">{resource.resource_type.toUpperCase()}</span>
+                        </div>
+                        <span className="resource-time-cell">{formatDateLabel(resource.created_at)}</span>
+                        <div className="resource-meta-cell resource-status-actions">
                           <StatusBadge status={resource.status} />
                           <div className="table-actions">
                             {resource.status === "completed" ? (

@@ -1,12 +1,14 @@
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useToast } from "@/components/feedback/ToastProvider";
 import { AppChrome } from "@/components/layout/AppChrome";
 import { Breadcrumbs } from "@/components/layout/Breadcrumbs";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { StateBlock } from "@/components/ui/StateBlock";
+import { useGroupResourceIndex } from "@/hooks/useGroupResourceIndex";
 import { useCreateGroup, useDeleteGroup, useGroups, useUpdateGroup } from "@/hooks/useGroups";
+import { useRecentGroupIds } from "@/hooks/useRecentGroups";
 import { formatDateLabel } from "@/lib/utils";
 
 type GroupFormState = {
@@ -17,6 +19,8 @@ type GroupFormState = {
 const emptyForm = { name: "", description: "" };
 
 export function GroupsPage() {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [keyword, setKeyword] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [renameGroupId, setRenameGroupId] = useState<string>();
@@ -26,9 +30,14 @@ export function GroupsPage() {
   const { pushToast } = useToast();
 
   const groupsQuery = useGroups(keyword);
+  const recentGroupIds = useRecentGroupIds();
   const createGroup = useCreateGroup();
   const deleteGroup = useDeleteGroup();
   const updateGroup = useUpdateGroup(renameGroupId ?? "");
+  const groups = groupsQuery.data?.items ?? [];
+  const { resourcesByGroupId, resources, isLoading: isResourceIndexLoading } = useGroupResourceIndex(groups);
+  const requestedView = searchParams.get("view") ?? "all";
+  const currentView = ["all", "recent", "processing", "framework"].includes(requestedView) ? requestedView : "all";
 
   const renameTarget = useMemo(
     () => groupsQuery.data?.items.find((group) => group.id === renameGroupId),
@@ -36,18 +45,61 @@ export function GroupsPage() {
   );
 
   const navItems = [
-    { label: "全部分组", to: "/groups", active: true },
-    { label: "最近访问" },
-    { label: "处理中资源" },
-    { label: "框架图谱" },
+    { label: "全部分组", to: "/groups", active: currentView === "all" },
+    { label: "最近访问", to: "/groups?view=recent", active: currentView === "recent" },
+    { label: "处理中资源", to: "/groups?view=processing", active: currentView === "processing" },
+    { label: "框架图谱", to: "/groups?view=framework", active: currentView === "framework" },
   ];
 
-  const recentItems =
-    groupsQuery.data?.items.slice(0, 2).map((group) => ({
+  const recentItems = recentGroupIds
+    .map((groupId) => groups.find((group) => group.id === groupId))
+    .filter((group): group is (typeof groups)[number] => Boolean(group))
+    .map((group) => ({
       label: group.name,
+      to: `/groups/${group.id}`,
       meta: `${group.resource_count} 个资源`,
-      active: group.id === "grp_agent",
-    })) ?? [];
+    }));
+
+  const filteredGroups = useMemo(() => {
+    if (currentView === "recent") {
+      const recentLookup = new Map(recentGroupIds.map((groupId, index) => [groupId, index]));
+      return groups
+        .filter((group) => recentLookup.has(group.id))
+        .sort((left, right) => (recentLookup.get(left.id) ?? 0) - (recentLookup.get(right.id) ?? 0));
+    }
+
+    if (currentView === "processing") {
+      return groups.filter((group) =>
+        (resourcesByGroupId[group.id] ?? []).some((resource) =>
+          ["uploaded", "parsing", "normalizing", "graph_generating"].includes(resource.status),
+        ),
+      );
+    }
+
+    if (currentView === "framework") {
+      return groups.filter((group) => (resourcesByGroupId[group.id] ?? []).some((resource) => resource.status === "completed"));
+    }
+
+    return groups;
+  }, [currentView, groups, recentGroupIds, resourcesByGroupId]);
+
+  const statusStats = useMemo(
+    () => ({
+      completed: resources.filter((resource) => resource.status === "completed").length,
+      generating: resources.filter((resource) =>
+        ["uploaded", "parsing", "normalizing", "graph_generating"].includes(resource.status),
+      ).length,
+      failed: resources.filter((resource) => resource.status === "failed").length,
+    }),
+    [resources],
+  );
+
+  const emptyStateCopy = {
+    all: "创建第一个学习分组后，这里会展示你的知识空间。",
+    recent: "访问过分组后，这里会展示最近打开的学习空间。",
+    processing: "当某个分组中存在处理中资源时，会出现在这里。",
+    framework: "当分组具备高层框架图谱后，会出现在这里。",
+  } as const;
 
   async function handleCreateSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -120,9 +172,9 @@ export function GroupsPage() {
                   <div key={index} className="group-card skeleton-card" />
                 ))}
               </div>
-            ) : groupsQuery.data?.items.length ? (
+            ) : filteredGroups.length ? (
               <section className="card-grid">
-                {groupsQuery.data.items.map((group, index) => (
+                {filteredGroups.map((group, index) => (
                   <article key={group.id} className="group-card">
                     <div className="group-card-head">
                       <span className={`group-icon ${index === 1 ? "green" : index === 2 ? "purple" : ""}`}>
@@ -133,7 +185,7 @@ export function GroupsPage() {
                     <h4>{group.name}</h4>
                     <p>{group.description || "暂无描述"}</p>
                     <div className="meta-row">
-                      <span>{formatDateLabel(group.updated_at || group.created_at)}</span>
+                      <span>创建于 {formatDateLabel(group.created_at)}</span>
                       <span>知识空间已创建</span>
                     </div>
                     <div className="card-actions">
@@ -171,7 +223,18 @@ export function GroupsPage() {
                 </button>
               </section>
             ) : (
-              <StateBlock title="暂无分组" description="创建第一个学习分组后，这里会展示你的知识空间。" actionLabel="创建分组" onAction={() => setCreateOpen(true)} />
+              <StateBlock
+                title="暂无分组"
+                description={emptyStateCopy[currentView as keyof typeof emptyStateCopy] ?? emptyStateCopy.all}
+                actionLabel={currentView === "all" ? "创建分组" : "查看全部分组"}
+                onAction={() => {
+                  if (currentView === "all") {
+                    setCreateOpen(true);
+                    return;
+                  }
+                  navigate("/groups");
+                }}
+              />
             )}
           </>
         }
@@ -191,15 +254,15 @@ export function GroupsPage() {
               </div>
               <div className="mini-stats">
                 <div>
-                  <strong>24</strong>
+                  <strong>{isResourceIndexLoading ? "..." : statusStats.completed}</strong>
                   <span>已完成资源</span>
                 </div>
                 <div>
-                  <strong>3</strong>
+                  <strong>{isResourceIndexLoading ? "..." : statusStats.generating}</strong>
                   <span>图谱生成中</span>
                 </div>
                 <div>
-                  <strong>1</strong>
+                  <strong>{isResourceIndexLoading ? "..." : statusStats.failed}</strong>
                   <span>失败待重试</span>
                 </div>
               </div>
