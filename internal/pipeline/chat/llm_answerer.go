@@ -18,11 +18,12 @@ type ChatClient interface {
 }
 
 type LLMAnswerer struct {
-	client ChatClient
+	client   ChatClient
+	fallback *Answerer
 }
 
 func NewLLMAnswerer(client ChatClient) *LLMAnswerer {
-	return &LLMAnswerer{client: client}
+	return &LLMAnswerer{client: client, fallback: NewAnswerer()}
 }
 
 func (a *LLMAnswerer) Answer(input Input) (Output, error) {
@@ -53,10 +54,10 @@ func (a *LLMAnswerer) Answer(input Input) (Output, error) {
 		CitedNodeIDs  []string `json:"cited_node_ids"`
 	}
 	if err := json.Unmarshal([]byte(extractJSONObject(raw)), &parsed); err != nil {
-		return Output{}, fmt.Errorf("decode answer json: %w", err)
+		return a.fallback.Answer(input)
 	}
 	if strings.TrimSpace(parsed.Answer) == "" {
-		return Output{}, errors.New("empty answer")
+		return a.fallback.Answer(input)
 	}
 	chunkAllow := map[string]struct{}{}
 	for _, chunk := range input.Chunks {

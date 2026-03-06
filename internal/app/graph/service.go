@@ -310,6 +310,10 @@ func (s *Service) GetFrameworkGraph(ctx context.Context, groupID string, opts Qu
 	return s.filterGraph(*graph, opts), nil
 }
 
+func (s *Service) ListResourceGraphsByGroup(ctx context.Context, groupID string) ([]SavedGraph, error) {
+	return s.repo.ListResourceGraphsByGroup(ctx, groupID)
+}
+
 func (s *Service) GetGraph(_ context.Context, graphID string) (SavedGraph, error) {
 	graph, ok := s.getGraphByID(graphID)
 	if !ok {

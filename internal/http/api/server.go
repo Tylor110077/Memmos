@@ -16,6 +16,7 @@ import (
 	appchat "github.com/tylor/goaipj/internal/app/chat"
 	appgraph "github.com/tylor/goaipj/internal/app/graph"
 	appgroup "github.com/tylor/goaipj/internal/app/group"
+	appjob "github.com/tylor/goaipj/internal/app/job"
 	appresource "github.com/tylor/goaipj/internal/app/resource"
 	"github.com/tylor/goaipj/internal/infra/apperror"
 	infraevent "github.com/tylor/goaipj/internal/infra/event"
@@ -32,8 +33,10 @@ type Dependencies struct {
 	ExpansionGenerator appgraphExpansionGenerator
 	ChatService        *appchat.Service
 	EventBroker        infraevent.Broker
+	FrameworkGenerator frameworkGraphGenerator
 	GroupService       *appgroup.Service
 	GraphService       *appgraph.Service
+	JobService         *appjob.Service
 	Metrics            *monitoring.Metrics
 	Readiness          []DependencyCheck
 	ResourceService    *appresource.Service
@@ -44,8 +47,10 @@ type Server struct {
 	expansionGenerator appgraphExpansionGenerator
 	chatService        *appchat.Service
 	eventBroker        infraevent.Broker
+	frameworkGenerator frameworkGraphGenerator
 	graphService       *appgraph.Service
 	groupService       *appgroup.Service
+	jobService         *appjob.Service
 	metrics            *monitoring.Metrics
 	readiness          []DependencyCheck
 	resourceService    *appresource.Service
@@ -53,18 +58,26 @@ type Server struct {
 }
 
 type groupResponse struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	CreatedAt string `json:"created_at"`
-	UpdatedAt string `json:"updated_at"`
+	Description            *string `json:"description"`
+	ID                     string  `json:"id"`
+	Name                   string  `json:"name"`
+	ResourceCount          int     `json:"resource_count"`
+	CompletedResourceCount int     `json:"completed_resource_count"`
+	CreatedAt              string  `json:"created_at"`
+	UpdatedAt              string  `json:"updated_at"`
 }
 
 type errorResponse struct {
-	TraceID string `json:"trace_id"`
-	Error   struct {
+	Error struct {
 		Code    string `json:"code"`
 		Message string `json:"message"`
 	} `json:"error"`
+}
+
+type envelopeResponse struct {
+	Data  any            `json:"data"`
+	Error any            `json:"error"`
+	Meta  map[string]any `json:"meta"`
 }
 
 type resourceResponse struct {
@@ -194,6 +207,10 @@ type appgraphExpansionGenerator interface {
 	Generate(input pipelinegraph.ExpansionInput) (pipelinegraph.Expansion, error)
 }
 
+type frameworkGraphGenerator interface {
+	Generate(documents []pipelinegraph.Document) (pipelinegraph.Document, error)
+}
+
 func NewServer(deps Dependencies) http.Handler {
 	eventBroker := deps.EventBroker
 	if eventBroker == nil {
@@ -203,8 +220,10 @@ func NewServer(deps Dependencies) http.Handler {
 		expansionGenerator: deps.ExpansionGenerator,
 		chatService:        deps.ChatService,
 		eventBroker:        eventBroker,
+		frameworkGenerator: deps.FrameworkGenerator,
 		graphService:       deps.GraphService,
 		groupService:       deps.GroupService,
+		jobService:         deps.JobService,
 		metrics:            deps.Metrics,
 		readiness:          deps.Readiness,
 		resourceService:    deps.ResourceService,
@@ -221,6 +240,7 @@ func NewServer(deps Dependencies) http.Handler {
 	mux.HandleFunc("/api/v1/conversations/", server.handleConversationByID)
 	mux.HandleFunc("/api/v1/events/groups/", server.handleGroupEvents)
 	mux.HandleFunc("/api/v1/graphs/", server.handleGraphsRoot)
+	mux.HandleFunc("/api/v1/jobs/", server.handleJobsRoot)
 	mux.HandleFunc("/api/v1/resources/", server.handleResourcesRoot)
 	return traceMiddleware(metricsMiddleware(server.metrics, mux))
 }
@@ -372,6 +392,8 @@ func (s *Server) handleGroupSubresource(w http.ResponseWriter, r *http.Request, 
 		s.handleCreateWebResource(w, r, groupID)
 	case len(parts) == 1 && parts[0] == "framework-graph" && r.Method == http.MethodGet:
 		s.handleGetFrameworkGraph(w, r, groupID)
+	case len(parts) == 2 && parts[0] == "framework-graph" && parts[1] == "generate" && r.Method == http.MethodPost:
+		s.handleGenerateFrameworkGraph(w, r, groupID)
 	default:
 		writeError(w, r, apperror.New(apperror.CodeNotFound, "route not found"))
 	}
@@ -516,6 +538,28 @@ func (s *Server) handleConversationByID(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeError(w, r, apperror.New(apperror.CodeNotFound, "route not found"))
+}
+
+func (s *Server) handleJobsRoot(w http.ResponseWriter, r *http.Request) {
+	if s.jobService == nil {
+		writeError(w, r, apperror.New(apperror.CodeInternal, "job service not configured"))
+		return
+	}
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	jobID := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/jobs/"), "/")
+	if jobID == "" {
+		writeError(w, r, apperror.New(apperror.CodeNotFound, "job not found"))
+		return
+	}
+	job, err := s.jobService.GetJob(r.Context(), jobID)
+	if err != nil {
+		writeError(w, r, apperror.New(apperror.CodeNotFound, "job not found"))
+		return
+	}
+	writeJSON(w, http.StatusOK, toJobStatusResponse(job))
 }
 
 func (s *Server) handleResourcesRoot(w http.ResponseWriter, r *http.Request) {
@@ -691,6 +735,111 @@ func (s *Server) handleGetFrameworkGraph(w http.ResponseWriter, r *http.Request,
 	writeJSON(w, http.StatusOK, toGraphResponse(graph))
 }
 
+func (s *Server) handleGenerateFrameworkGraph(w http.ResponseWriter, r *http.Request, groupID string) {
+	if s.groupService == nil {
+		writeError(w, r, apperror.New(apperror.CodeInternal, "group service not configured"))
+		return
+	}
+	if s.graphService == nil {
+		writeError(w, r, apperror.New(apperror.CodeInternal, "graph service not configured"))
+		return
+	}
+	if s.frameworkGenerator == nil {
+		writeError(w, r, apperror.New(apperror.CodeInternal, "framework generator not configured"))
+		return
+	}
+	if _, err := s.groupService.GetGroup(r.Context(), groupID); err != nil {
+		writeError(w, r, err)
+		return
+	}
+
+	const jobType = "generate_framework_graph"
+	dedupeKey := groupID + ":" + jobType
+	if s.jobService != nil {
+		if existing, ok, err := s.jobService.FindActiveJob(r.Context(), dedupeKey); err == nil && ok {
+			writeJSON(w, http.StatusAccepted, map[string]any{
+				"group_id": groupID,
+				"job_id":   existing.ID,
+				"status":   string(existing.Status),
+			})
+			return
+		}
+	}
+
+	var jobResult appjob.Result
+	if s.jobService != nil {
+		created, err := s.jobService.CreateQueuedJob(r.Context(), appjob.CreateQueuedJobInput{
+			GroupID:       groupID,
+			JobType:       jobType,
+			QueueName:     "graph",
+			MaxAttempts:   3,
+			Deduplication: dedupeKey,
+			Payload: map[string]any{
+				"group_id": groupID,
+			},
+		})
+		if err != nil {
+			writeError(w, r, apperror.Wrap(apperror.CodeInternal, "create framework graph job", err))
+			return
+		}
+		jobResult = created
+		if _, err := s.jobService.MarkRunning(r.Context(), created.Job.ID); err != nil {
+			writeError(w, r, apperror.Wrap(apperror.CodeInternal, "mark framework graph job running", err))
+			return
+		}
+	}
+
+	resourceGraphs, err := s.graphService.ListResourceGraphsByGroup(r.Context(), groupID)
+	if err != nil {
+		s.failFrameworkJob(r.Context(), jobResult.Job.ID, err)
+		writeError(w, r, apperror.Wrap(apperror.CodeInternal, "list resource graphs", err))
+		return
+	}
+	documents := make([]pipelinegraph.Document, 0, len(resourceGraphs))
+	for _, graph := range resourceGraphs {
+		documents = append(documents, toFrameworkSourceDocument(graph))
+	}
+	document, err := s.frameworkGenerator.Generate(documents)
+	if err != nil {
+		s.failFrameworkJob(r.Context(), jobResult.Job.ID, err)
+		writeError(w, r, apperror.Wrap(apperror.CodeInternal, "generate framework graph", err))
+		return
+	}
+	saved, err := s.graphService.SaveFrameworkGraph(r.Context(), appgraph.SaveFrameworkInput{
+		GroupID:  groupID,
+		Title:    "Framework",
+		Document: document,
+	})
+	if err != nil {
+		s.failFrameworkJob(r.Context(), jobResult.Job.ID, err)
+		writeError(w, r, apperror.Wrap(apperror.CodeInternal, "save framework graph", err))
+		return
+	}
+	if s.jobService != nil {
+		if _, err := s.jobService.MarkDone(r.Context(), jobResult.Job.ID); err != nil {
+			writeError(w, r, apperror.Wrap(apperror.CodeInternal, "mark framework graph job done", err))
+			return
+		}
+	}
+	s.publishGroupEvent(r.Context(), infraevent.Envelope{
+		Name:    "framework_graph.updated",
+		GroupID: groupID,
+		Payload: map[string]any{
+			"group_id": groupID,
+			"graph_id": saved.Graph.ID,
+		},
+	})
+	status := "completed"
+	if s.jobService != nil {
+		status = string(appjob.StatusDone)
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{
+		"group_id": groupID,
+		"job_id":   jobResult.Job.ID,
+		"status":   status,
+	})
+}
+
 func (s *Server) handleGetNodeDetail(w http.ResponseWriter, r *http.Request, graphID, nodeID string) {
 	detail, err := s.graphService.GetNodeDetail(r.Context(), graphID, nodeID)
 	if err != nil {
@@ -763,10 +912,13 @@ func (s *Server) handleExpandNode(w http.ResponseWriter, r *http.Request, graphI
 
 func toGroupResponse(group appgroup.Group) groupResponse {
 	return groupResponse{
-		ID:        group.ID,
-		Name:      group.Name,
-		CreatedAt: group.CreatedAt.Format(time.RFC3339Nano),
-		UpdatedAt: group.UpdatedAt.Format(time.RFC3339Nano),
+		Description:            nil,
+		ID:                     group.ID,
+		Name:                   group.Name,
+		ResourceCount:          0,
+		CompletedResourceCount: 0,
+		CreatedAt:              group.CreatedAt.Format(time.RFC3339Nano),
+		UpdatedAt:              group.UpdatedAt.Format(time.RFC3339Nano),
 	}
 }
 
@@ -792,6 +944,20 @@ func toJobResponse(job appresource.Job) jobResponse {
 		Type:       job.Type,
 		Status:     job.Status,
 		CreatedAt:  job.CreatedAt.Format(time.RFC3339Nano),
+	}
+}
+
+func toJobStatusResponse(job appjob.Job) map[string]any {
+	return map[string]any{
+		"id":           job.ID,
+		"job_type":     job.JobType,
+		"status":       string(job.Status),
+		"attempt":      job.Attempts,
+		"max_attempts": job.MaxAttempts,
+		"last_error":   nullableString(job.ErrorMessage),
+		"started_at":   formatOptionalTime(job.StartedAt),
+		"finished_at":  formatOptionalTime(job.FinishedAt),
+		"created_at":   job.CreatedAt.Format(time.RFC3339Nano),
 	}
 }
 
@@ -894,6 +1060,54 @@ func toConversationResponse(conversation appchat.Conversation) conversationRespo
 	return resp
 }
 
+func toFrameworkSourceDocument(graph appgraph.SavedGraph) pipelinegraph.Document {
+	document := pipelinegraph.Document{
+		Summary: graph.Graph.Summary,
+		Nodes:   make([]pipelinegraph.Node, 0, len(graph.Nodes)),
+		Edges:   make([]pipelinegraph.Edge, 0, len(graph.Edges)),
+	}
+	for _, node := range graph.Nodes {
+		document.Nodes = append(document.Nodes, pipelinegraph.Node{
+			ID:          node.ID,
+			Name:        node.Name,
+			Type:        node.Type,
+			Description: node.Description,
+			Meaning:     node.Meaning,
+			Level:       node.Level,
+		})
+	}
+	for _, edge := range graph.Edges {
+		document.Edges = append(document.Edges, pipelinegraph.Edge{
+			ID:       edge.ID,
+			SourceID: edge.SourceID,
+			TargetID: edge.TargetID,
+			Relation: edge.Relation,
+		})
+	}
+	return document
+}
+
+func nullableString(value string) any {
+	if value == "" {
+		return nil
+	}
+	return value
+}
+
+func formatOptionalTime(value *time.Time) any {
+	if value == nil {
+		return nil
+	}
+	return value.Format(time.RFC3339Nano)
+}
+
+func (s *Server) failFrameworkJob(ctx context.Context, jobID string, err error) {
+	if s.jobService == nil || jobID == "" {
+		return
+	}
+	_, _ = s.jobService.MarkFailed(ctx, jobID, err.Error())
+}
+
 func (s *Server) writeConversationStream(w http.ResponseWriter, result appchat.AskResult) {
 	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -945,7 +1159,11 @@ func toConversationMessageResponse(message appchat.Message) conversationMessageR
 func writeJSON(w http.ResponseWriter, status int, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(payload)
+	_ = json.NewEncoder(w).Encode(envelopeResponse{
+		Data:  payload,
+		Error: nil,
+		Meta:  map[string]any{},
+	})
 }
 
 func writeSSEJSON(w http.ResponseWriter, event string, payload any) {
@@ -961,11 +1179,18 @@ func writeSSEJSON(w http.ResponseWriter, event string, payload any) {
 
 func writeError(w http.ResponseWriter, r *http.Request, err error) {
 	traceID, _ := TraceIDFromContext(r.Context())
-	resp := errorResponse{TraceID: traceID}
+	resp := errorResponse{}
 	resp.Error.Code = apperror.CodeOf(err)
 	resp.Error.Message = err.Error()
-
-	writeJSON(w, apperror.StatusCode(err), resp)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(apperror.StatusCode(err))
+	_ = json.NewEncoder(w).Encode(envelopeResponse{
+		Data:  nil,
+		Error: resp.Error,
+		Meta: map[string]any{
+			"trace_id": traceID,
+		},
+	})
 }
 
 type contextKey string

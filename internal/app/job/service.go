@@ -36,8 +36,10 @@ type Job struct {
 	QueueName    string         `json:"queue_name"`
 	Status       Status         `json:"status"`
 	Payload      map[string]any `json:"payload,omitempty"`
+	DedupeKey    string         `json:"dedupe_key,omitempty"`
 	ErrorMessage string         `json:"error_message,omitempty"`
 	Attempts     int            `json:"attempts"`
+	MaxAttempts  int            `json:"max_attempts"`
 	CreatedAt    time.Time      `json:"created_at"`
 	UpdatedAt    time.Time      `json:"updated_at"`
 	StartedAt    *time.Time     `json:"started_at,omitempty"`
@@ -58,17 +60,20 @@ type Result struct {
 }
 
 type CreateQueuedJobInput struct {
-	GroupID    string
-	ResourceID string
-	JobType    string
-	QueueName  string
-	Payload    map[string]any
+	GroupID       string
+	ResourceID    string
+	JobType       string
+	QueueName     string
+	Payload       map[string]any
+	MaxAttempts   int
+	Deduplication string
 }
 
 type Repository interface {
 	CreateJob(ctx context.Context, job Job) error
 	UpdateJob(ctx context.Context, job Job) error
 	GetJob(ctx context.Context, jobID string) (Job, error)
+	ListJobs(ctx context.Context) ([]Job, error)
 	CreateEvent(ctx context.Context, event Event) error
 	ListEvents(ctx context.Context, jobID string) ([]Event, error)
 }
@@ -83,16 +88,22 @@ func NewService(repo Repository) *Service {
 
 func (s *Service) CreateQueuedJob(ctx context.Context, input CreateQueuedJobInput) (Result, error) {
 	now := time.Now().UTC()
+	maxAttempts := input.MaxAttempts
+	if maxAttempts <= 0 {
+		maxAttempts = 3
+	}
 	job := Job{
-		ID:         newID(),
-		GroupID:    input.GroupID,
-		ResourceID: input.ResourceID,
-		JobType:    input.JobType,
-		QueueName:  input.QueueName,
-		Status:     StatusQueued,
-		Payload:    input.Payload,
-		CreatedAt:  now,
-		UpdatedAt:  now,
+		ID:          newID(),
+		GroupID:     input.GroupID,
+		ResourceID:  input.ResourceID,
+		JobType:     input.JobType,
+		QueueName:   input.QueueName,
+		Status:      StatusQueued,
+		Payload:     input.Payload,
+		DedupeKey:   input.Deduplication,
+		MaxAttempts: maxAttempts,
+		CreatedAt:   now,
+		UpdatedAt:   now,
 	}
 	if err := s.repo.CreateJob(ctx, job); err != nil {
 		return Result{}, err
@@ -108,6 +119,27 @@ func (s *Service) CreateQueuedJob(ctx context.Context, input CreateQueuedJobInpu
 		return Result{}, err
 	}
 	return Result{Job: job, Events: []Event{event}}, nil
+}
+
+func (s *Service) GetJob(ctx context.Context, jobID string) (Job, error) {
+	return s.repo.GetJob(ctx, jobID)
+}
+
+func (s *Service) FindActiveJob(ctx context.Context, dedupeKey string) (Job, bool, error) {
+	jobs, err := s.repo.ListJobs(ctx)
+	if err != nil {
+		return Job{}, false, err
+	}
+	for _, job := range jobs {
+		if job.DedupeKey != dedupeKey {
+			continue
+		}
+		if job.Status != StatusQueued && job.Status != StatusRunning {
+			continue
+		}
+		return job, true, nil
+	}
+	return Job{}, false, nil
 }
 
 func (s *Service) MarkRunning(ctx context.Context, jobID string) (Result, error) {
@@ -195,6 +227,17 @@ func (r *InMemoryRepository) GetJob(_ context.Context, jobID string) (Job, error
 		return Job{}, errors.New("job not found")
 	}
 	return job, nil
+}
+
+func (r *InMemoryRepository) ListJobs(_ context.Context) ([]Job, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	items := make([]Job, 0, len(r.jobs))
+	for _, job := range r.jobs {
+		items = append(items, job)
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].CreatedAt.Before(items[j].CreatedAt) })
+	return items, nil
 }
 
 func (r *InMemoryRepository) CreateEvent(_ context.Context, event Event) error {

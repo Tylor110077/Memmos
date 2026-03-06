@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	appgroup "github.com/tylor/goaipj/internal/app/group"
@@ -75,14 +76,14 @@ func TestGroupsValidationAndErrorShape(t *testing.T) {
 	}
 
 	var body errorResponse
-	decodeJSONResponse(t, resp, &body)
+	decodeErrorResponse(t, resp, &body)
 	if body.Error.Code == "" {
 		t.Fatalf("expected error code")
 	}
 	if body.Error.Message == "" {
 		t.Fatalf("expected error message")
 	}
-	if body.TraceID == "" {
+	if !strings.Contains(resp.Body.String(), `"trace_id"`) {
 		t.Fatalf("expected trace id")
 	}
 }
@@ -132,7 +133,35 @@ func performJSONRequest(t *testing.T, handler http.Handler, method, path string,
 
 func decodeJSONResponse(t *testing.T, resp *httptest.ResponseRecorder, dst any) {
 	t.Helper()
+	var envelope struct {
+		Data json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &envelope); err == nil && len(envelope.Data) > 0 && string(envelope.Data) != "null" {
+		if err := json.Unmarshal(envelope.Data, dst); err != nil {
+			t.Fatalf("json.Unmarshal(data) error = %v body=%s", err, resp.Body.String())
+		}
+		return
+	}
 	if err := json.Unmarshal(resp.Body.Bytes(), dst); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v body=%s", err, resp.Body.String())
+	}
+}
+
+func decodeErrorResponse(t *testing.T, resp *httptest.ResponseRecorder, dst any) {
+	t.Helper()
+	var envelope struct {
+		Error struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v body=%s", err, resp.Body.String())
+	}
+	switch target := dst.(type) {
+	case *errorResponse:
+		target.Error = envelope.Error
+	default:
+		t.Fatalf("unsupported decodeErrorResponse target %T", dst)
 	}
 }
