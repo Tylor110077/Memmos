@@ -18,12 +18,14 @@ import (
 	appgroup "github.com/tylor/goaipj/internal/app/group"
 	appresource "github.com/tylor/goaipj/internal/app/resource"
 	"github.com/tylor/goaipj/internal/infra/apperror"
+	infraevent "github.com/tylor/goaipj/internal/infra/event"
 	pipelinegraph "github.com/tylor/goaipj/internal/pipeline/graph"
 )
 
 type Dependencies struct {
 	ExpansionGenerator appgraphExpansionGenerator
 	ChatService        *appchat.Service
+	EventBroker        infraevent.Broker
 	GroupService       *appgroup.Service
 	GraphService       *appgraph.Service
 	ResourceService    *appresource.Service
@@ -33,6 +35,7 @@ type Dependencies struct {
 type Server struct {
 	expansionGenerator appgraphExpansionGenerator
 	chatService        *appchat.Service
+	eventBroker        infraevent.Broker
 	graphService       *appgraph.Service
 	groupService       *appgroup.Service
 	resourceService    *appresource.Service
@@ -182,9 +185,14 @@ type appgraphExpansionGenerator interface {
 }
 
 func NewServer(deps Dependencies) http.Handler {
+	eventBroker := deps.EventBroker
+	if eventBroker == nil {
+		eventBroker = infraevent.NewInMemoryBroker()
+	}
 	server := &Server{
 		expansionGenerator: deps.ExpansionGenerator,
 		chatService:        deps.ChatService,
+		eventBroker:        eventBroker,
 		graphService:       deps.GraphService,
 		groupService:       deps.GroupService,
 		resourceService:    deps.ResourceService,
@@ -198,6 +206,7 @@ func NewServer(deps Dependencies) http.Handler {
 	mux.HandleFunc("/api/v1/groups/", server.handleGroupByID)
 	mux.HandleFunc("/api/v1/conversations", server.handleConversations)
 	mux.HandleFunc("/api/v1/conversations/", server.handleConversationByID)
+	mux.HandleFunc("/api/v1/events/groups/", server.handleGroupEvents)
 	mux.HandleFunc("/api/v1/graphs/", server.handleGraphsRoot)
 	mux.HandleFunc("/api/v1/resources/", server.handleResourcesRoot)
 	return traceMiddleware(mux)
@@ -376,6 +385,39 @@ func (s *Server) handleConversations(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *Server) handleGroupEvents(w http.ResponseWriter, r *http.Request) {
+	if s.eventBroker == nil {
+		writeError(w, r, apperror.New(apperror.CodeInternal, "event broker not configured"))
+		return
+	}
+	groupID := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/events/groups/"), "/")
+	if groupID == "" {
+		writeError(w, r, apperror.New(apperror.CodeNotFound, "group not found"))
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.WriteHeader(http.StatusOK)
+
+	flusher, _ := w.(http.Flusher)
+	sub := s.eventBroker.Subscribe(r.Context(), groupID)
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case event, ok := <-sub:
+			if !ok {
+				return
+			}
+			writeSSEJSON(w, event.Name, event)
+			if flusher != nil {
+				flusher.Flush()
+			}
+		}
+	}
+}
+
 func (s *Server) handleConversationByID(w http.ResponseWriter, r *http.Request) {
 	if s.chatService == nil {
 		writeError(w, r, apperror.New(apperror.CodeInternal, "chat service not configured"))
@@ -409,6 +451,15 @@ func (s *Server) handleConversationByID(w http.ResponseWriter, r *http.Request) 
 			writeError(w, r, err)
 			return
 		}
+		s.publishGroupEvent(r.Context(), infraevent.Envelope{
+			Name:    infraevent.NameConversationMessageCreated,
+			GroupID: result.Conversation.GroupID,
+			Payload: map[string]any{
+				"conversation_id": result.Conversation.ID,
+				"message_id":      result.AssistantMessage.ID,
+				"node_id":         result.Conversation.CurrentNodeID,
+			},
+		})
 		if req.Stream {
 			s.writeConversationStream(w, result)
 			return
@@ -437,6 +488,15 @@ func (s *Server) handleResourcesRoot(w http.ResponseWriter, r *http.Request) {
 			writeError(w, r, err)
 			return
 		}
+		s.publishGroupEvent(r.Context(), infraevent.Envelope{
+			Name:    infraevent.NameResourceStatusChanged,
+			GroupID: result.Resource.GroupID,
+			Payload: map[string]any{
+				"resource_id": result.Resource.ID,
+				"status":      result.Resource.Status,
+				"job_id":      result.Job.ID,
+			},
+		})
 		writeJSON(w, http.StatusOK, toResourceWithJobResponse(result))
 		return
 	}
@@ -476,6 +536,15 @@ func (s *Server) handleUploadResource(w http.ResponseWriter, r *http.Request, gr
 		writeError(w, r, err)
 		return
 	}
+	s.publishGroupEvent(r.Context(), infraevent.Envelope{
+		Name:    infraevent.NameResourceStatusChanged,
+		GroupID: result.Resource.GroupID,
+		Payload: map[string]any{
+			"resource_id": result.Resource.ID,
+			"status":      result.Resource.Status,
+			"job_id":      result.Job.ID,
+		},
+	})
 	writeJSON(w, http.StatusCreated, toResourceWithJobResponse(result))
 }
 
@@ -495,6 +564,15 @@ func (s *Server) handleCreateWebResource(w http.ResponseWriter, r *http.Request,
 		writeError(w, r, err)
 		return
 	}
+	s.publishGroupEvent(r.Context(), infraevent.Envelope{
+		Name:    infraevent.NameResourceStatusChanged,
+		GroupID: result.Resource.GroupID,
+		Payload: map[string]any{
+			"resource_id": result.Resource.ID,
+			"status":      result.Resource.Status,
+			"job_id":      result.Job.ID,
+		},
+	})
 	writeJSON(w, http.StatusCreated, toResourceWithJobResponse(result))
 }
 
@@ -613,6 +691,18 @@ func (s *Server) handleExpandNode(w http.ResponseWriter, r *http.Request, graphI
 	if _, err := s.graphService.ExpandNode(r.Context(), graphID, nodeID, expansion); err != nil {
 		writeError(w, r, apperror.New(apperror.CodeInternal, err.Error()))
 		return
+	}
+	if graph, err := s.graphService.GetGraph(r.Context(), graphID); err == nil {
+		s.publishGroupEvent(r.Context(), infraevent.Envelope{
+			Name:    infraevent.NameGraphNodeExpanded,
+			GroupID: graph.Graph.GroupID,
+			Payload: map[string]any{
+				"graph_id":       graphID,
+				"source_node_id": nodeID,
+				"new_node_id":    expansion.Node.ID,
+				"edge_id":        expansion.Edge.ID,
+			},
+		})
 	}
 	writeJSON(w, http.StatusOK, expandNodeResponse{
 		Job: jobResponse{
@@ -877,4 +967,11 @@ func splitStreamDeltas(content string, chunkSize int) []string {
 		out = append(out, string(runes[start:end]))
 	}
 	return out
+}
+
+func (s *Server) publishGroupEvent(ctx context.Context, event infraevent.Envelope) {
+	if s.eventBroker == nil {
+		return
+	}
+	s.eventBroker.Publish(ctx, event)
 }
