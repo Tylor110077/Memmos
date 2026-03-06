@@ -94,3 +94,38 @@ func TestGetResourceGraphFiltersByLevel(t *testing.T) {
 		t.Fatalf("edges = %d, want 1", len(got.Edges))
 	}
 }
+
+func TestGetNodeNeighborsReturnsOneHopRelations(t *testing.T) {
+	repo := NewInMemoryRepository()
+	service := NewService(repo)
+	ctx := context.Background()
+
+	saved, err := service.SaveResourceGraph(ctx, SaveInput{
+		GroupID:    "group-1",
+		ResourceID: "resource-1",
+		Title:      "Graph",
+		Document: pipelinegraph.Document{
+			Summary: "summary",
+			Nodes: []pipelinegraph.Node{
+				{ID: "root", Name: "Root", Type: "topic", Level: 0},
+				{ID: "child", Name: "Child", Type: "concept", Level: 1},
+				{ID: "peer", Name: "Peer", Type: "concept", Level: 1},
+			},
+			Edges: []pipelinegraph.Edge{
+				{ID: "e1", SourceID: "root", TargetID: "child", Relation: "contains"},
+				{ID: "e2", SourceID: "peer", TargetID: "root", Relation: "supports"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("SaveResourceGraph() error = %v", err)
+	}
+
+	neighbors, err := service.GetNodeNeighbors(ctx, saved.Graph.ID, "root")
+	if err != nil {
+		t.Fatalf("GetNodeNeighbors() error = %v", err)
+	}
+	if len(neighbors) != 2 {
+		t.Fatalf("neighbors = %d, want 2", len(neighbors))
+	}
+}

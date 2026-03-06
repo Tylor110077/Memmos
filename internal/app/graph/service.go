@@ -310,6 +310,45 @@ func (s *Service) GetFrameworkGraph(ctx context.Context, groupID string, opts Qu
 	return s.filterGraph(*graph, opts), nil
 }
 
+func (s *Service) GetGraph(_ context.Context, graphID string) (SavedGraph, error) {
+	graph, ok := s.getGraphByID(graphID)
+	if !ok {
+		return SavedGraph{}, errors.New("graph not found")
+	}
+	return graph, nil
+}
+
+func (s *Service) GetNodeNeighbors(_ context.Context, graphID, nodeID string) ([]Neighbor, error) {
+	graph, ok := s.getGraphByID(graphID)
+	if !ok {
+		return nil, errors.New("graph not found")
+	}
+	nodeIndex := map[string]Node{}
+	found := false
+	for _, node := range graph.Nodes {
+		nodeIndex[node.ID] = node
+		if node.ID == nodeID {
+			found = true
+		}
+	}
+	if !found {
+		return nil, errors.New("node not found")
+	}
+	neighbors := make([]Neighbor, 0)
+	for _, edge := range graph.Edges {
+		if edge.SourceID == nodeID {
+			if neighbor, ok := nodeIndex[edge.TargetID]; ok {
+				neighbors = append(neighbors, Neighbor{Node: neighbor, Relation: edge.Relation})
+			}
+		} else if edge.TargetID == nodeID {
+			if neighbor, ok := nodeIndex[edge.SourceID]; ok {
+				neighbors = append(neighbors, Neighbor{Node: neighbor, Relation: edge.Relation})
+			}
+		}
+	}
+	return neighbors, nil
+}
+
 func (s *Service) GetNodeDetail(ctx context.Context, graphID, nodeID string) (NodeDetail, error) {
 	graph, ok := s.getGraphByID(graphID)
 	if !ok {
@@ -327,21 +366,9 @@ func (s *Service) GetNodeDetail(ctx context.Context, graphID, nodeID string) (No
 	if !found {
 		return NodeDetail{}, errors.New("node not found")
 	}
-	neighbors := make([]Neighbor, 0)
-	nodeIndex := map[string]Node{}
-	for _, node := range graph.Nodes {
-		nodeIndex[node.ID] = node
-	}
-	for _, edge := range graph.Edges {
-		if edge.SourceID == nodeID {
-			if neighbor, ok := nodeIndex[edge.TargetID]; ok {
-				neighbors = append(neighbors, Neighbor{Node: neighbor, Relation: edge.Relation})
-			}
-		} else if edge.TargetID == nodeID {
-			if neighbor, ok := nodeIndex[edge.SourceID]; ok {
-				neighbors = append(neighbors, Neighbor{Node: neighbor, Relation: edge.Relation})
-			}
-		}
+	neighbors, err := s.GetNodeNeighbors(ctx, graphID, nodeID)
+	if err != nil {
+		return NodeDetail{}, err
 	}
 	examples, err := s.repo.ListExamples(ctx, graphID, nodeID)
 	if err != nil {

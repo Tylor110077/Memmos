@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	appchat "github.com/tylor/goaipj/internal/app/chat"
 	appgraph "github.com/tylor/goaipj/internal/app/graph"
 	appgroup "github.com/tylor/goaipj/internal/app/group"
 	appresource "github.com/tylor/goaipj/internal/app/resource"
@@ -22,6 +23,7 @@ import (
 
 type Dependencies struct {
 	ExpansionGenerator appgraphExpansionGenerator
+	ChatService        *appchat.Service
 	GroupService       *appgroup.Service
 	GraphService       *appgraph.Service
 	ResourceService    *appresource.Service
@@ -30,6 +32,7 @@ type Dependencies struct {
 
 type Server struct {
 	expansionGenerator appgraphExpansionGenerator
+	chatService        *appchat.Service
 	graphService       *appgraph.Service
 	groupService       *appgroup.Service
 	resourceService    *appresource.Service
@@ -136,6 +139,44 @@ type expandNodeResponse struct {
 	Job jobResponse `json:"job"`
 }
 
+type conversationResponse struct {
+	ID            string                        `json:"id"`
+	GroupID       string                        `json:"group_id"`
+	GraphID       string                        `json:"graph_id"`
+	CurrentNodeID string                        `json:"current_node_id"`
+	Title         string                        `json:"title"`
+	CreatedAt     string                        `json:"created_at"`
+	UpdatedAt     string                        `json:"updated_at"`
+	Messages      []conversationMessageResponse `json:"messages"`
+}
+
+type conversationMessageResponse struct {
+	ID              string                  `json:"id"`
+	ConversationID  string                  `json:"conversation_id"`
+	Role            string                  `json:"role"`
+	Content         string                  `json:"content"`
+	Examples        []string                `json:"examples,omitempty"`
+	CitedChunkIDs   []string                `json:"cited_chunk_ids"`
+	CitedNodeIDs    []string                `json:"cited_node_ids"`
+	ContextSnapshot conversationContextData `json:"context_snapshot"`
+	CreatedAt       string                  `json:"created_at"`
+}
+
+type conversationContextData struct {
+	GraphID           string   `json:"graph_id"`
+	CurrentNodeID     string   `json:"current_node_id"`
+	ResourceSummary   string   `json:"resource_summary"`
+	NeighborNodeIDs   []string `json:"neighbor_node_ids"`
+	RetrievedChunkIDs []string `json:"retrieved_chunk_ids"`
+	RecentMessageIDs  []string `json:"recent_message_ids"`
+}
+
+type conversationAskResponse struct {
+	ConversationID   string                      `json:"conversation_id"`
+	UserMessage      conversationMessageResponse `json:"user_message"`
+	AssistantMessage conversationMessageResponse `json:"assistant_message"`
+}
+
 type appgraphExpansionGenerator interface {
 	Generate(input pipelinegraph.ExpansionInput) (pipelinegraph.Expansion, error)
 }
@@ -143,6 +184,7 @@ type appgraphExpansionGenerator interface {
 func NewServer(deps Dependencies) http.Handler {
 	server := &Server{
 		expansionGenerator: deps.ExpansionGenerator,
+		chatService:        deps.ChatService,
 		graphService:       deps.GraphService,
 		groupService:       deps.GroupService,
 		resourceService:    deps.ResourceService,
@@ -154,6 +196,8 @@ func NewServer(deps Dependencies) http.Handler {
 	mux.HandleFunc("/readyz", server.handleReadyz)
 	mux.HandleFunc("/api/v1/groups", server.handleGroups)
 	mux.HandleFunc("/api/v1/groups/", server.handleGroupByID)
+	mux.HandleFunc("/api/v1/conversations", server.handleConversations)
+	mux.HandleFunc("/api/v1/conversations/", server.handleConversationByID)
 	mux.HandleFunc("/api/v1/graphs/", server.handleGraphsRoot)
 	mux.HandleFunc("/api/v1/resources/", server.handleResourcesRoot)
 	return traceMiddleware(mux)
@@ -294,6 +338,86 @@ func (s *Server) handleGraphsRoot(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(parts) == 4 && parts[1] == "nodes" && parts[3] == "expand" && r.Method == http.MethodPost {
 		s.handleExpandNode(w, r, parts[0], parts[2])
+		return
+	}
+	writeError(w, r, apperror.New(apperror.CodeNotFound, "route not found"))
+}
+
+func (s *Server) handleConversations(w http.ResponseWriter, r *http.Request) {
+	if s.chatService == nil {
+		writeError(w, r, apperror.New(apperror.CodeInternal, "chat service not configured"))
+		return
+	}
+	switch r.Method {
+	case http.MethodPost:
+		var req struct {
+			GroupID       string `json:"group_id"`
+			GraphID       string `json:"graph_id"`
+			CurrentNodeID string `json:"current_node_id"`
+			Title         string `json:"title"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, r, apperror.New(apperror.CodeInvalidArgument, "invalid json body"))
+			return
+		}
+		conversation, err := s.chatService.CreateConversation(r.Context(), appchat.CreateConversationInput{
+			GroupID:       req.GroupID,
+			GraphID:       req.GraphID,
+			CurrentNodeID: req.CurrentNodeID,
+			Title:         req.Title,
+		})
+		if err != nil {
+			writeError(w, r, err)
+			return
+		}
+		writeJSON(w, http.StatusCreated, toConversationResponse(conversation))
+	default:
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) handleConversationByID(w http.ResponseWriter, r *http.Request) {
+	if s.chatService == nil {
+		writeError(w, r, apperror.New(apperror.CodeInternal, "chat service not configured"))
+		return
+	}
+	path := strings.TrimPrefix(r.URL.Path, "/api/v1/conversations/")
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) == 1 && r.Method == http.MethodGet {
+		conversation, err := s.chatService.GetConversation(r.Context(), parts[0])
+		if err != nil {
+			writeError(w, r, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, toConversationResponse(conversation))
+		return
+	}
+	if len(parts) == 2 && parts[1] == "messages" && r.Method == http.MethodPost {
+		var req struct {
+			Content string `json:"content"`
+			Stream  bool   `json:"stream"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, r, apperror.New(apperror.CodeInvalidArgument, "invalid json body"))
+			return
+		}
+		if req.Stream {
+			writeError(w, r, apperror.New(apperror.CodeInvalidArgument, "streaming not implemented"))
+			return
+		}
+		result, err := s.chatService.Ask(r.Context(), appchat.AskInput{
+			ConversationID: parts[0],
+			Content:        req.Content,
+		})
+		if err != nil {
+			writeError(w, r, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, conversationAskResponse{
+			ConversationID:   result.Conversation.ID,
+			UserMessage:      toConversationMessageResponse(result.UserMessage),
+			AssistantMessage: toConversationMessageResponse(result.AssistantMessage),
+		})
 		return
 	}
 	writeError(w, r, apperror.New(apperror.CodeNotFound, "route not found"))
@@ -613,6 +737,44 @@ func toGraphNodeResponse(node appgraph.Node) graphNodeResponse {
 		Meaning:     node.Meaning,
 		Level:       node.Level,
 		IsExpansion: node.IsExpansion,
+	}
+}
+
+func toConversationResponse(conversation appchat.Conversation) conversationResponse {
+	resp := conversationResponse{
+		ID:            conversation.ID,
+		GroupID:       conversation.GroupID,
+		GraphID:       conversation.GraphID,
+		CurrentNodeID: conversation.CurrentNodeID,
+		Title:         conversation.Title,
+		CreatedAt:     conversation.CreatedAt.Format(time.RFC3339Nano),
+		UpdatedAt:     conversation.UpdatedAt.Format(time.RFC3339Nano),
+		Messages:      make([]conversationMessageResponse, 0, len(conversation.Messages)),
+	}
+	for _, message := range conversation.Messages {
+		resp.Messages = append(resp.Messages, toConversationMessageResponse(message))
+	}
+	return resp
+}
+
+func toConversationMessageResponse(message appchat.Message) conversationMessageResponse {
+	return conversationMessageResponse{
+		ID:             message.ID,
+		ConversationID: message.ConversationID,
+		Role:           message.Role,
+		Content:        message.Content,
+		Examples:       append([]string(nil), message.Examples...),
+		CitedChunkIDs:  append([]string(nil), message.CitedChunkIDs...),
+		CitedNodeIDs:   append([]string(nil), message.CitedNodeIDs...),
+		ContextSnapshot: conversationContextData{
+			GraphID:           message.ContextSnapshot.GraphID,
+			CurrentNodeID:     message.ContextSnapshot.CurrentNodeID,
+			ResourceSummary:   message.ContextSnapshot.ResourceSummary,
+			NeighborNodeIDs:   append([]string(nil), message.ContextSnapshot.NeighborNodeIDs...),
+			RetrievedChunkIDs: append([]string(nil), message.ContextSnapshot.RetrievedChunkIDs...),
+			RecentMessageIDs:  append([]string(nil), message.ContextSnapshot.RecentMessageIDs...),
+		},
+		CreatedAt: message.CreatedAt.Format(time.RFC3339Nano),
 	}
 }
 
