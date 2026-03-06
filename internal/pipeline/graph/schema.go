@@ -30,14 +30,34 @@ type Edge struct {
 var (
 	ErrEmptySummary = errors.New("graph summary is required")
 	ErrNoNodes      = errors.New("graph nodes are required")
+	ErrNoEdges      = errors.New("graph edges are required")
 )
 
 func (d Document) Validate() error {
-	if d.Summary == "" {
+	return d.ValidateWithConfig(DefaultSchemaConfig())
+}
+
+type SchemaConfig struct {
+	RequireSummary bool
+	RequireEdges   bool
+}
+
+func DefaultSchemaConfig() SchemaConfig {
+	return SchemaConfig{
+		RequireSummary: true,
+		RequireEdges:   false,
+	}
+}
+
+func (d Document) ValidateWithConfig(cfg SchemaConfig) error {
+	if cfg.RequireSummary && d.Summary == "" {
 		return ErrEmptySummary
 	}
 	if len(d.Nodes) == 0 {
 		return ErrNoNodes
+	}
+	if cfg.RequireEdges && len(d.Edges) == 0 {
+		return ErrNoEdges
 	}
 
 	seen := map[string]struct{}{}

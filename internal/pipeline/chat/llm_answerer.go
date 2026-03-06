@@ -20,10 +20,20 @@ type ChatClient interface {
 type LLMAnswerer struct {
 	client   ChatClient
 	fallback *Answerer
+	config   PromptConfig
+}
+
+type PromptConfig struct {
+	SystemDirectives []string
+	OutputKeys       []string
 }
 
 func NewLLMAnswerer(client ChatClient) *LLMAnswerer {
-	return &LLMAnswerer{client: client, fallback: NewAnswerer()}
+	return NewLLMAnswererWithConfig(client, DefaultPromptConfig())
+}
+
+func NewLLMAnswererWithConfig(client ChatClient, config PromptConfig) *LLMAnswerer {
+	return &LLMAnswerer{client: client, fallback: NewAnswerer(), config: config.withDefaults()}
 }
 
 func (a *LLMAnswerer) Answer(input Input) (Output, error) {
@@ -33,12 +43,7 @@ func (a *LLMAnswerer) Answer(input Input) (Output, error) {
 	if strings.TrimSpace(input.Question) == "" {
 		return Output{}, errors.New("question is required")
 	}
-	systemPrompt := strings.Join([]string{
-		"You are a focused learning assistant.",
-		"Answer only from the provided node and group context.",
-		"Return strict JSON with keys: answer, examples, cited_chunk_ids, cited_node_ids.",
-		"Do not invent chunk ids or node ids outside the provided allowlists.",
-	}, "\n")
+	systemPrompt := strings.Join(a.config.systemPromptLines(), "\n")
 	userPrompt := buildPrompt(input)
 	raw, err := a.client.Chat(context.Background(), []CompletionMessage{
 		{Role: "system", Content: systemPrompt},
@@ -96,6 +101,34 @@ func (a *LLMAnswerer) Answer(input Input) (Output, error) {
 		CitedChunkIDs: parsed.CitedChunkIDs,
 		CitedNodeIDs:  parsed.CitedNodeIDs,
 	}, nil
+}
+
+func DefaultPromptConfig() PromptConfig {
+	return PromptConfig{
+		SystemDirectives: []string{
+			"You are a focused learning assistant.",
+			"Answer only from the provided node and group context.",
+			"Do not invent chunk ids or node ids outside the provided allowlists.",
+		},
+		OutputKeys: []string{"answer", "examples", "cited_chunk_ids", "cited_node_ids"},
+	}
+}
+
+func (c PromptConfig) withDefaults() PromptConfig {
+	defaults := DefaultPromptConfig()
+	if len(c.SystemDirectives) == 0 {
+		c.SystemDirectives = defaults.SystemDirectives
+	}
+	if len(c.OutputKeys) == 0 {
+		c.OutputKeys = defaults.OutputKeys
+	}
+	return c
+}
+
+func (c PromptConfig) systemPromptLines() []string {
+	lines := append([]string(nil), c.SystemDirectives...)
+	lines = append(lines, "Return strict JSON with keys: "+strings.Join(c.OutputKeys, ", ")+".")
+	return lines
 }
 
 func buildPrompt(input Input) string {
