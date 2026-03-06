@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useToast } from "@/components/feedback/ToastProvider";
 import { AppChrome } from "@/components/layout/AppChrome";
 import { Breadcrumbs } from "@/components/layout/Breadcrumbs";
 import { KnowledgeGraph } from "@/components/graph/KnowledgeGraph";
+import { filterGraphView } from "@/components/graph/filterGraph";
 import { Button } from "@/components/ui/Button";
 import { StateBlock } from "@/components/ui/StateBlock";
 import { useConversation, useCreateConversation, useStreamMessage } from "@/hooks/useConversation";
@@ -13,7 +14,17 @@ import { useGroupSidebar } from "@/hooks/useGroupSidebar";
 import { useTrackRecentGroup } from "@/hooks/useRecentGroups";
 import { useResourceDetail } from "@/hooks/useResources";
 import { useGraphWorkbenchStore } from "@/store/graphWorkbench";
-import type { ConversationMessage } from "@/api/types";
+import type { ConversationMessage, NodeType } from "@/api/types";
+
+const nodeTypeLabels: Record<NodeType, string> = {
+  topic: "主题",
+  subtopic: "子主题",
+  concept: "概念",
+  method: "方法",
+  rule: "规则",
+  conclusion: "结论",
+  example: "示例",
+};
 
 export function ResourceGraphPage() {
   const { groupId = "", resourceId = "" } = useParams();
@@ -26,11 +37,37 @@ export function ResourceGraphPage() {
   useGroupEvents(groupId);
   useTrackRecentGroup(groupId);
   const { navItems: sidebarNav, recentItems } = useGroupSidebar(groupId);
-  const { selectedNodeId, includeExpansion, maxLevel, setSelectedNodeId, setIncludeExpansion, setMaxLevel, reset } =
-    useGraphWorkbenchStore();
+  const {
+    selectedNodeId,
+    includeExpansion,
+    maxLevel,
+    searchTerm,
+    nodeTypeFilter,
+    setSelectedNodeId,
+    setIncludeExpansion,
+    setMaxLevel,
+    setSearchTerm,
+    toggleNodeType,
+    clearNodeTypeFilter,
+    reset,
+  } = useGraphWorkbenchStore();
   const graphQuery = useResourceGraph(resourceId, { includeExpansion, maxLevel });
-  const graphId = graphQuery.data?.graph.id ?? "";
-  const nodeId = selectedNodeId ?? graphQuery.data?.graph.root_node_id ?? undefined;
+  const filteredGraph = useMemo(
+    () =>
+      graphQuery.data
+        ? filterGraphView(graphQuery.data, {
+            searchTerm,
+            nodeTypeFilter,
+          })
+        : undefined,
+    [graphQuery.data, nodeTypeFilter, searchTerm],
+  );
+  const availableNodeTypes = useMemo(
+    () => Array.from(new Set((graphQuery.data?.nodes ?? []).map((node) => node.node_type))),
+    [graphQuery.data?.nodes],
+  );
+  const graphId = filteredGraph?.graph.id ?? "";
+  const nodeId = selectedNodeId ?? filteredGraph?.graph.root_node_id ?? undefined;
   const nodeDetailQuery = useNodeDetail(graphId, nodeId);
   const expandMutation = useExpandNode(graphId, resourceId, groupId);
   const createConversation = useCreateConversation();
@@ -42,10 +79,16 @@ export function ResourceGraphPage() {
   }, [reset]);
 
   useEffect(() => {
-    if (!selectedNodeId && graphQuery.data?.graph.root_node_id) {
-      setSelectedNodeId(graphQuery.data.graph.root_node_id);
+    const visibleIds = new Set(filteredGraph?.nodes.map((node) => node.id) ?? []);
+    if (!visibleIds.size) {
+      setSelectedNodeId(undefined);
+      return;
     }
-  }, [graphQuery.data?.graph.root_node_id, selectedNodeId, setSelectedNodeId]);
+
+    if (!selectedNodeId || !visibleIds.has(selectedNodeId)) {
+      setSelectedNodeId(filteredGraph?.graph.root_node_id ?? filteredGraph?.nodes[0]?.id);
+    }
+  }, [filteredGraph, selectedNodeId, setSelectedNodeId]);
 
   const messages = [
     ...(conversationQuery.data?.messages ?? []),
@@ -190,6 +233,35 @@ export function ResourceGraphPage() {
               <input type="checkbox" checked={includeExpansion} onChange={(event) => setIncludeExpansion(event.target.checked)} />
             </label>
           </div>
+          <div className="control-card">
+            <h5>关键词筛选</h5>
+            <input
+              className="searchbox compact"
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+              placeholder="搜索节点名称、描述或意义"
+            />
+          </div>
+          <div className="control-card">
+            <div className="filter-head">
+              <h5>节点类型</h5>
+              <button className="inline-link" onClick={clearNodeTypeFilter} type="button">
+                清空
+              </button>
+            </div>
+            <div className="filter-chip-grid">
+              {availableNodeTypes.map((nodeType) => (
+                <button
+                  key={nodeType}
+                  type="button"
+                  className={`filter-chip ${nodeTypeFilter.includes(nodeType) ? "active" : ""}`}
+                  onClick={() => toggleNodeType(nodeType)}
+                >
+                  {nodeTypeLabels[nodeType]}
+                </button>
+              ))}
+            </div>
+          </div>
         </>
       }
       main={
@@ -213,15 +285,17 @@ export function ResourceGraphPage() {
               </Link>
             </div>
           </header>
-          {graphQuery.data ? (
+          {filteredGraph && filteredGraph.nodes.length > 0 ? (
             <section className="graph-canvas">
               <KnowledgeGraph
-                graph={graphQuery.data}
+                graph={filteredGraph}
                 selectedNodeId={nodeId}
                 onSelectNode={setSelectedNodeId}
                 exportName={`${resource?.name ?? "resource"}-knowledge-graph`}
               />
             </section>
+          ) : graphQuery.data ? (
+            <StateBlock title="当前筛选下暂无结果" description="可以清空关键词或节点类型筛选，恢复完整图谱视图。" />
           ) : (
             <StateBlock title="暂无图谱数据" description="当前资源缺少可渲染的图谱结构。" />
           )}

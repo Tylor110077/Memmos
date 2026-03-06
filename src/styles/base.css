@@ -297,6 +297,11 @@ h6 {
   min-width: 280px;
 }
 
+.searchbox.compact {
+  min-width: 0;
+  padding: 10px 12px;
+}
+
 .field {
   display: grid;
   gap: 8px;
@@ -573,6 +578,36 @@ h6 {
   gap: 10px;
   justify-content: flex-end;
   align-items: center;
+}
+
+.filter-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.filter-chip-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.filter-chip {
+  border: 1px solid var(--line);
+  background: var(--surface-alt);
+  color: var(--text-soft);
+  border-radius: 999px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.filter-chip.active {
+  background: var(--primary-soft);
+  color: var(--primary-strong);
+  border-color: color-mix(in srgb, var(--primary) 32%, var(--line));
 }
 
 .status {

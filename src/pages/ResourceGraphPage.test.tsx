@@ -40,4 +40,19 @@ describe("ResourceGraphPage", () => {
     expect(within(screen.getByRole("log")).getByText("这个节点的核心价值是什么？")).toBeInTheDocument();
     expect(await screen.findByText("这个节点在当前知识结构中承担主干解释作用，并把相关概念串成可追问的学习链路。")).toBeInTheDocument();
   });
+
+  it("supports keyword filtering for graph nodes", async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    expect(await screen.findByText("资源级知识图谱")).toBeInTheDocument();
+
+    await user.type(screen.getByPlaceholderText("搜索节点名称、描述或意义"), "不存在的节点");
+
+    expect(await screen.findByText("当前筛选下暂无结果")).toBeInTheDocument();
+
+    await user.clear(screen.getByPlaceholderText("搜索节点名称、描述或意义"));
+
+    expect(await screen.findByText("Agent 执行循环", { selector: "h5" })).toBeInTheDocument();
+  });
 });
