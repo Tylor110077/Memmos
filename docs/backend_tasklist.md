@@ -36,6 +36,7 @@ MVP 至少需要满足：
 
 - 优先级：P0
 - 标签：`MVP`
+- 状态：`已完成`（2026-03-06）
 - 目标：建立 `apps/api/cmd/api`、`apps/api/cmd/worker`、`internal/http`、`internal/app`、`internal/domain`、`internal/infra`、`internal/pipeline`、`internal/worker`、`migrations`、`sql` 的基础结构。
 - 验收：
   - 工程可编译。
@@ -45,6 +46,7 @@ MVP 至少需要满足：
 
 - 优先级：P0
 - 标签：`MVP`
+- 状态：`已完成`（2026-03-06）
 - 目标：统一管理服务端口、数据库 DSN、Redis 地址、对象存储配置、Tika 地址、模型配置、日志级别。
 - 细项：
   - 定义 `config` 包和配置结构体。
@@ -57,6 +59,7 @@ MVP 至少需要满足：
 
 - 优先级：P0
 - 标签：`MVP`
+- 状态：`已完成`（2026-03-06）
 - 目标：定义统一错误码、日志字段和 HTTP 错误响应格式。
 - 细项：
   - 定义业务错误码枚举。
@@ -160,6 +163,7 @@ MVP 至少需要满足：
 
 - 优先级：P0
 - 标签：`MVP`
+- 状态：`已完成`（2026-03-06）
 - 目标：定义分组实体、名称校验规则、删除约束。
 - 验收：
   - 分组名为空、超长时能返回明确错误。
@@ -168,6 +172,7 @@ MVP 至少需要满足：
 
 - 优先级：P0
 - 标签：`MVP`
+- 状态：`已完成`（2026-03-06）
 - 目标：实现 `CreateGroup/ListGroups/GetGroup/UpdateGroup/DeleteGroup`。
 - 验收：
   - 服务层逻辑不依赖 HTTP。
@@ -176,6 +181,7 @@ MVP 至少需要满足：
 
 - 优先级：P0
 - 标签：`MVP`
+- 状态：`已完成`（2026-03-06）
 - 目标：实现分组 CRUD 接口。
 - 细项：
   - `POST /groups`
