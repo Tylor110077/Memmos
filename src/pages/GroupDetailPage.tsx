@@ -9,6 +9,7 @@ import { KnowledgeGraph } from "@/components/graph/KnowledgeGraph";
 import { StateBlock } from "@/components/ui/StateBlock";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { useFrameworkGraph, useGenerateFrameworkGraph } from "@/hooks/useGraphs";
+import { useGroupEvents } from "@/hooks/useGroupEvents";
 import { useGroupDetail } from "@/hooks/useGroups";
 import {
   useCreateWebResource,
@@ -38,6 +39,7 @@ export function GroupDetailPage() {
   const retryMutation = useRetryResource(groupId);
   const deleteMutation = useDeleteResource(groupId);
   const regenerateMutation = useGenerateFrameworkGraph(groupId);
+  useGroupEvents(groupId);
 
   const group = groupQuery.data;
   const resources = resourcesQuery.data?.items ?? [];

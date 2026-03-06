@@ -4,12 +4,14 @@ import { KnowledgeGraph } from "@/components/graph/KnowledgeGraph";
 import { Button } from "@/components/ui/Button";
 import { StateBlock } from "@/components/ui/StateBlock";
 import { useFrameworkGraph } from "@/hooks/useGraphs";
+import { useGroupEvents } from "@/hooks/useGroupEvents";
 import { useGroupDetail } from "@/hooks/useGroups";
 
 export function FrameworkGraphPage() {
   const { groupId = "" } = useParams();
   const groupQuery = useGroupDetail(groupId);
   const graphQuery = useFrameworkGraph(groupId, 2);
+  useGroupEvents(groupId);
 
   return (
     <AppChrome

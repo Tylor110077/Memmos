@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/Button";
 import { StateBlock } from "@/components/ui/StateBlock";
 import { useConversation, useCreateConversation, useSendMessage } from "@/hooks/useConversation";
 import { useExpandNode, useNodeDetail, useResourceGraph } from "@/hooks/useGraphs";
+import { useGroupEvents } from "@/hooks/useGroupEvents";
 import { useResourceDetail } from "@/hooks/useResources";
 import { useGraphWorkbenchStore } from "@/store/graphWorkbench";
 
@@ -17,6 +18,7 @@ export function ResourceGraphPage() {
   const [conversationId, setConversationId] = useState<string>("conv_loop");
   const { pushToast } = useToast();
   const resourceQuery = useResourceDetail(resourceId);
+  useGroupEvents(groupId);
   const { selectedNodeId, includeExpansion, maxLevel, setSelectedNodeId, setIncludeExpansion, setMaxLevel, reset } =
     useGraphWorkbenchStore();
   const graphQuery = useResourceGraph(resourceId, { includeExpansion, maxLevel });
