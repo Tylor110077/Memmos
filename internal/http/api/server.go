@@ -112,6 +112,23 @@ type graphResponse struct {
 	Edges []graphEdgeResponse `json:"edges"`
 }
 
+type nodeDetailResponse struct {
+	Node      graphNodeResponse   `json:"node"`
+	Neighbors []nodeNeighborEntry `json:"neighbors"`
+	Examples  []nodeExampleEntry  `json:"examples"`
+}
+
+type nodeNeighborEntry struct {
+	Node     graphNodeResponse `json:"node"`
+	Relation string            `json:"relation"`
+}
+
+type nodeExampleEntry struct {
+	ID      string `json:"id"`
+	NodeID  string `json:"node_id"`
+	Content string `json:"content"`
+}
+
 func NewServer(deps Dependencies) http.Handler {
 	server := &Server{
 		graphService:    deps.GraphService,
@@ -125,6 +142,7 @@ func NewServer(deps Dependencies) http.Handler {
 	mux.HandleFunc("/readyz", server.handleReadyz)
 	mux.HandleFunc("/api/v1/groups", server.handleGroups)
 	mux.HandleFunc("/api/v1/groups/", server.handleGroupByID)
+	mux.HandleFunc("/api/v1/graphs/", server.handleGraphsRoot)
 	mux.HandleFunc("/api/v1/resources/", server.handleResourcesRoot)
 	return traceMiddleware(mux)
 }
@@ -219,23 +237,50 @@ func (s *Server) handleGroupByID(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGroupSubresource(w http.ResponseWriter, r *http.Request, groupID string, parts []string) {
-	if s.resourceService == nil {
-		writeError(w, r, apperror.New(apperror.CodeInternal, "resource service not configured"))
-		return
-	}
-
 	switch {
 	case len(parts) == 2 && parts[0] == "resources" && parts[1] == "upload" && r.Method == http.MethodPost:
+		if s.resourceService == nil {
+			writeError(w, r, apperror.New(apperror.CodeInternal, "resource service not configured"))
+			return
+		}
 		s.handleUploadResource(w, r, groupID)
 	case len(parts) == 1 && parts[0] == "resources" && r.Method == http.MethodGet:
+		if s.resourceService == nil {
+			writeError(w, r, apperror.New(apperror.CodeInternal, "resource service not configured"))
+			return
+		}
 		s.handleListResources(w, r, groupID)
 	case len(parts) == 2 && parts[0] == "resources" && r.Method == http.MethodGet:
+		if s.resourceService == nil {
+			writeError(w, r, apperror.New(apperror.CodeInternal, "resource service not configured"))
+			return
+		}
 		s.handleGetResource(w, r, groupID, parts[1])
 	case len(parts) == 1 && parts[0] == "web-resources" && r.Method == http.MethodPost:
+		if s.resourceService == nil {
+			writeError(w, r, apperror.New(apperror.CodeInternal, "resource service not configured"))
+			return
+		}
 		s.handleCreateWebResource(w, r, groupID)
+	case len(parts) == 1 && parts[0] == "framework-graph" && r.Method == http.MethodGet:
+		s.handleGetFrameworkGraph(w, r, groupID)
 	default:
 		writeError(w, r, apperror.New(apperror.CodeNotFound, "route not found"))
 	}
+}
+
+func (s *Server) handleGraphsRoot(w http.ResponseWriter, r *http.Request) {
+	if s.graphService == nil {
+		writeError(w, r, apperror.New(apperror.CodeInternal, "graph service not configured"))
+		return
+	}
+	path := strings.TrimPrefix(r.URL.Path, "/api/v1/graphs/")
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) == 3 && parts[1] == "nodes" && r.Method == http.MethodGet {
+		s.handleGetNodeDetail(w, r, parts[0], parts[2])
+		return
+	}
+	writeError(w, r, apperror.New(apperror.CodeNotFound, "route not found"))
 }
 
 func (s *Server) handleResourcesRoot(w http.ResponseWriter, r *http.Request) {
@@ -365,6 +410,34 @@ func (s *Server) handleGetResourceGraph(w http.ResponseWriter, r *http.Request, 
 	writeJSON(w, http.StatusOK, toGraphResponse(graph))
 }
 
+func (s *Server) handleGetFrameworkGraph(w http.ResponseWriter, r *http.Request, groupID string) {
+	if s.graphService == nil {
+		writeError(w, r, apperror.New(apperror.CodeInternal, "graph service not configured"))
+		return
+	}
+	graph, err := s.graphService.GetFrameworkGraph(r.Context(), groupID, appgraph.QueryOptions{
+		IncludeExpansion: true,
+	})
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	if graph.Graph.ID == "" {
+		writeError(w, r, apperror.New(apperror.CodeNotFound, "framework graph not found"))
+		return
+	}
+	writeJSON(w, http.StatusOK, toGraphResponse(graph))
+}
+
+func (s *Server) handleGetNodeDetail(w http.ResponseWriter, r *http.Request, graphID, nodeID string) {
+	detail, err := s.graphService.GetNodeDetail(r.Context(), graphID, nodeID)
+	if err != nil {
+		writeError(w, r, apperror.New(apperror.CodeNotFound, err.Error()))
+		return
+	}
+	writeJSON(w, http.StatusOK, toNodeDetailResponse(detail))
+}
+
 func toGroupResponse(group appgroup.Group) groupResponse {
 	return groupResponse{
 		ID:        group.ID,
@@ -445,6 +518,39 @@ func toGraphResponse(item appgraph.SavedGraph) graphResponse {
 		},
 		Nodes: nodes,
 		Edges: edges,
+	}
+}
+
+func toNodeDetailResponse(detail appgraph.NodeDetail) nodeDetailResponse {
+	resp := nodeDetailResponse{
+		Node: toGraphNodeResponse(detail.Node),
+	}
+	for _, neighbor := range detail.Neighbors {
+		resp.Neighbors = append(resp.Neighbors, nodeNeighborEntry{
+			Node:     toGraphNodeResponse(neighbor.Node),
+			Relation: neighbor.Relation,
+		})
+	}
+	for _, example := range detail.Examples {
+		resp.Examples = append(resp.Examples, nodeExampleEntry{
+			ID:      example.ID,
+			NodeID:  example.NodeID,
+			Content: example.Content,
+		})
+	}
+	return resp
+}
+
+func toGraphNodeResponse(node appgraph.Node) graphNodeResponse {
+	return graphNodeResponse{
+		ID:          node.ID,
+		GraphID:     node.GraphID,
+		Name:        node.Name,
+		Type:        node.Type,
+		Description: node.Description,
+		Meaning:     node.Meaning,
+		Level:       node.Level,
+		IsExpansion: node.IsExpansion,
 	}
 }
 
