@@ -19,8 +19,14 @@ import (
 	appresource "github.com/tylor/goaipj/internal/app/resource"
 	"github.com/tylor/goaipj/internal/infra/apperror"
 	infraevent "github.com/tylor/goaipj/internal/infra/event"
+	"github.com/tylor/goaipj/internal/infra/monitoring"
 	pipelinegraph "github.com/tylor/goaipj/internal/pipeline/graph"
 )
+
+type DependencyCheck struct {
+	Name  string
+	Check func(ctx context.Context) error
+}
 
 type Dependencies struct {
 	ExpansionGenerator appgraphExpansionGenerator
@@ -28,6 +34,8 @@ type Dependencies struct {
 	EventBroker        infraevent.Broker
 	GroupService       *appgroup.Service
 	GraphService       *appgraph.Service
+	Metrics            *monitoring.Metrics
+	Readiness          []DependencyCheck
 	ResourceService    *appresource.Service
 	Logger             *log.Logger
 }
@@ -38,6 +46,8 @@ type Server struct {
 	eventBroker        infraevent.Broker
 	graphService       *appgraph.Service
 	groupService       *appgroup.Service
+	metrics            *monitoring.Metrics
+	readiness          []DependencyCheck
 	resourceService    *appresource.Service
 	logger             *log.Logger
 }
@@ -195,6 +205,8 @@ func NewServer(deps Dependencies) http.Handler {
 		eventBroker:        eventBroker,
 		graphService:       deps.GraphService,
 		groupService:       deps.GroupService,
+		metrics:            deps.Metrics,
+		readiness:          deps.Readiness,
 		resourceService:    deps.ResourceService,
 		logger:             deps.Logger,
 	}
@@ -202,6 +214,7 @@ func NewServer(deps Dependencies) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", server.handleHealthz)
 	mux.HandleFunc("/readyz", server.handleReadyz)
+	mux.HandleFunc("/metrics", server.handleMetrics)
 	mux.HandleFunc("/api/v1/groups", server.handleGroups)
 	mux.HandleFunc("/api/v1/groups/", server.handleGroupByID)
 	mux.HandleFunc("/api/v1/conversations", server.handleConversations)
@@ -209,15 +222,45 @@ func NewServer(deps Dependencies) http.Handler {
 	mux.HandleFunc("/api/v1/events/groups/", server.handleGroupEvents)
 	mux.HandleFunc("/api/v1/graphs/", server.handleGraphsRoot)
 	mux.HandleFunc("/api/v1/resources/", server.handleResourcesRoot)
-	return traceMiddleware(mux)
+	return traceMiddleware(metricsMiddleware(server.metrics, mux))
 }
 
 func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status": "ok",
+		"checks": s.checkStatuses(context.Background()),
+	})
 }
 
-func (s *Server) handleReadyz(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
+func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+	defer cancel()
+	checks := s.checkStatuses(ctx)
+	status := "ready"
+	code := http.StatusOK
+	for _, value := range checks {
+		if value != "up" {
+			status = "not_ready"
+			code = http.StatusServiceUnavailable
+			break
+		}
+	}
+	writeJSON(w, code, map[string]any{
+		"status": status,
+		"checks": checks,
+	})
+}
+
+func (s *Server) handleMetrics(w http.ResponseWriter, _ *http.Request) {
+	if s.metrics == nil {
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, "")
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+	w.WriteHeader(http.StatusOK)
+	_, _ = io.WriteString(w, s.metrics.RenderPrometheus())
 }
 
 func (s *Server) handleGroups(w http.ResponseWriter, r *http.Request) {
@@ -447,6 +490,7 @@ func (s *Server) handleConversationByID(w http.ResponseWriter, r *http.Request) 
 			ConversationID: parts[0],
 			Content:        req.Content,
 		})
+		s.observeTask("chat_answer", err == nil, startedAt(r))
 		if err != nil {
 			writeError(w, r, err)
 			return
@@ -685,13 +729,16 @@ func (s *Server) handleExpandNode(w http.ResponseWriter, r *http.Request, graphI
 		Neighbors: neighbors,
 	})
 	if err != nil {
+		s.observeTask("graph_expand", false, startedAt(r))
 		writeError(w, r, apperror.New(apperror.CodeInvalidArgument, err.Error()))
 		return
 	}
 	if _, err := s.graphService.ExpandNode(r.Context(), graphID, nodeID, expansion); err != nil {
+		s.observeTask("graph_expand", false, startedAt(r))
 		writeError(w, r, apperror.New(apperror.CodeInternal, err.Error()))
 		return
 	}
+	s.observeTask("graph_expand", true, startedAt(r))
 	if graph, err := s.graphService.GetGraph(r.Context(), graphID); err == nil {
 		s.publishGroupEvent(r.Context(), infraevent.Envelope{
 			Name:    infraevent.NameGraphNodeExpanded,
@@ -924,6 +971,7 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) {
 type contextKey string
 
 const traceIDKey contextKey = "trace_id"
+const requestStartedAtKey contextKey = "request_started_at"
 
 func traceMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -932,6 +980,7 @@ func traceMiddleware(next http.Handler) http.Handler {
 			traceID = newTraceID()
 		}
 		ctx := context.WithValue(r.Context(), traceIDKey, traceID)
+		ctx = context.WithValue(ctx, requestStartedAtKey, time.Now().UTC())
 		w.Header().Set("X-Trace-ID", traceID)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
@@ -974,4 +1023,97 @@ func (s *Server) publishGroupEvent(ctx context.Context, event infraevent.Envelop
 		return
 	}
 	s.eventBroker.Publish(ctx, event)
+}
+
+func (s *Server) checkStatuses(ctx context.Context) map[string]string {
+	checks := map[string]string{}
+	for _, check := range s.readiness {
+		if check.Name == "" || check.Check == nil {
+			continue
+		}
+		if err := check.Check(ctx); err != nil {
+			checks[check.Name] = "down"
+			continue
+		}
+		checks[check.Name] = "up"
+	}
+	return checks
+}
+
+func (s *Server) observeTask(name string, success bool, started time.Time) {
+	if s.metrics == nil || started.IsZero() {
+		return
+	}
+	s.metrics.ObserveTask(name, success, time.Since(started))
+}
+
+func metricsMiddleware(metrics *monitoring.Metrics, next http.Handler) http.Handler {
+	if metrics == nil {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		recorder := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		started := time.Now()
+		next.ServeHTTP(recorder, r)
+		metrics.ObserveHTTPRequest(r.Method, routePattern(r.URL.Path), recorder.status, time.Since(started))
+	})
+}
+
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (r *statusRecorder) WriteHeader(status int) {
+	r.status = status
+	r.ResponseWriter.WriteHeader(status)
+}
+
+func routePattern(path string) string {
+	switch {
+	case path == "/healthz":
+		return "/healthz"
+	case path == "/readyz":
+		return "/readyz"
+	case path == "/metrics":
+		return "/metrics"
+	case strings.HasPrefix(path, "/api/v1/groups/") && strings.Contains(path, "/resources/upload"):
+		return "/api/v1/groups/{groupId}/resources/upload"
+	case strings.HasPrefix(path, "/api/v1/groups/") && strings.Contains(path, "/web-resources"):
+		return "/api/v1/groups/{groupId}/web-resources"
+	case strings.HasPrefix(path, "/api/v1/groups/") && strings.Contains(path, "/framework-graph"):
+		return "/api/v1/groups/{groupId}/framework-graph"
+	case strings.HasPrefix(path, "/api/v1/groups/") && strings.Contains(path, "/resources/"):
+		return "/api/v1/groups/{groupId}/resources/{resourceId}"
+	case path == "/api/v1/groups":
+		return "/api/v1/groups"
+	case strings.HasPrefix(path, "/api/v1/groups/"):
+		return "/api/v1/groups/{groupId}"
+	case path == "/api/v1/conversations":
+		return "/api/v1/conversations"
+	case strings.HasPrefix(path, "/api/v1/conversations/") && strings.Contains(path, "/messages"):
+		return "/api/v1/conversations/{conversationId}/messages"
+	case strings.HasPrefix(path, "/api/v1/conversations/"):
+		return "/api/v1/conversations/{conversationId}"
+	case strings.HasPrefix(path, "/api/v1/events/groups/"):
+		return "/api/v1/events/groups/{groupId}"
+	case strings.HasPrefix(path, "/api/v1/graphs/") && strings.Contains(path, "/expand"):
+		return "/api/v1/graphs/{graphId}/nodes/{nodeId}/expand"
+	case strings.HasPrefix(path, "/api/v1/graphs/") && strings.Contains(path, "/nodes/"):
+		return "/api/v1/graphs/{graphId}/nodes/{nodeId}"
+	case strings.HasPrefix(path, "/api/v1/resources/") && strings.Contains(path, "/retry"):
+		return "/api/v1/resources/{resourceId}/retry"
+	case strings.HasPrefix(path, "/api/v1/resources/") && strings.Contains(path, "/graph"):
+		return "/api/v1/resources/{resourceId}/graph"
+	default:
+		return path
+	}
+}
+
+func startedAt(r *http.Request) time.Time {
+	value, ok := r.Context().Value(requestStartedAtKey).(time.Time)
+	if !ok {
+		return time.Time{}
+	}
+	return value
 }
