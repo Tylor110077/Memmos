@@ -70,6 +70,22 @@ type CreateWebResourceInput struct {
 	Name    string
 }
 
+type PresignUploadInput struct {
+	GroupID     string
+	Filename    string
+	ContentType string
+	ExpiresIn   time.Duration
+}
+
+type PresignedUpload struct {
+	Resource  Resource          `json:"resource"`
+	UploadURL string            `json:"upload_url"`
+	Method    string            `json:"method"`
+	Headers   map[string]string `json:"headers"`
+	ObjectKey string            `json:"object_key"`
+	ExpiresAt time.Time         `json:"expires_at"`
+}
+
 type GroupLookup interface {
 	GetGroup(ctx context.Context, id string) (appgroup.Group, error)
 }
@@ -95,6 +111,7 @@ type JobPublisher interface {
 type ObjectStore interface {
 	PutObject(ctx context.Context, input storage.PutObjectInput) (storage.ObjectMeta, error)
 	DeleteObject(ctx context.Context, key string) error
+	PresignPutObject(ctx context.Context, input storage.PresignPutObjectInput) (storage.PresignedUpload, error)
 }
 
 type Service struct {
@@ -253,6 +270,59 @@ func (s *Service) DeleteResource(ctx context.Context, resourceID string) error {
 		return apperror.Wrap(apperror.CodeInternal, "delete resource", err)
 	}
 	return nil
+}
+
+func (s *Service) PresignUpload(ctx context.Context, input PresignUploadInput) (PresignedUpload, error) {
+	if _, err := s.groupLookup.GetGroup(ctx, input.GroupID); err != nil {
+		return PresignedUpload{}, apperror.New(apperror.CodeNotFound, "group not found")
+	}
+	entity, err := domainresource.NewFile(input.GroupID, input.Filename)
+	if err != nil {
+		return PresignedUpload{}, mapDomainError(err)
+	}
+	entity.ID = newID()
+	objectKey := storage.ResourceObjectKey(entity.GroupID, entity.ID, storage.KindRaw, input.Filename)
+	plan, err := s.store.PresignPutObject(ctx, storage.PresignPutObjectInput{
+		Key:         objectKey,
+		ContentType: input.ContentType,
+		ExpiresIn:   input.ExpiresIn,
+	})
+	if err != nil {
+		return PresignedUpload{}, apperror.Wrap(apperror.CodeInternal, "presign upload", err)
+	}
+	if err := s.repo.Create(ctx, *entity); err != nil {
+		return PresignedUpload{}, apperror.Wrap(apperror.CodeInternal, "create resource", err)
+	}
+	if err := s.artifacts.Create(ctx, Artifact{
+		ID:          newID(),
+		ResourceID:  entity.ID,
+		Type:        "raw_file",
+		StorageKey:  objectKey,
+		ContentType: input.ContentType,
+		CreatedAt:   time.Now().UTC(),
+	}); err != nil {
+		return PresignedUpload{}, apperror.Wrap(apperror.CodeInternal, "create artifact", err)
+	}
+	return PresignedUpload{
+		Resource:  toDTO(*entity),
+		UploadURL: plan.URL,
+		Method:    plan.Method,
+		Headers:   plan.Headers,
+		ObjectKey: objectKey,
+		ExpiresAt: plan.ExpiresAt,
+	}, nil
+}
+
+func (s *Service) CompletePresignedUpload(ctx context.Context, resourceID string) (ResourceWithJob, error) {
+	item, err := s.repo.Get(ctx, resourceID)
+	if err != nil {
+		return ResourceWithJob{}, apperror.New(apperror.CodeNotFound, "resource not found")
+	}
+	job, err := s.jobs.Publish(ctx, JobTypeParseResource, item.ID)
+	if err != nil {
+		return ResourceWithJob{}, apperror.Wrap(apperror.CodeInternal, "publish parse job", err)
+	}
+	return ResourceWithJob{Resource: toDTO(*item), Job: job}, nil
 }
 
 func (s *Service) UpdateStatus(ctx context.Context, resourceID string, next domainresource.Status) (Resource, error) {

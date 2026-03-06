@@ -168,3 +168,41 @@ func TestGetJobEndpointReturnsNotFound(t *testing.T) {
 		t.Fatalf("status = %d body=%s", resp.Code, resp.Body.String())
 	}
 }
+
+func TestCancelAndResumeJobEndpoints(t *testing.T) {
+	jobService := appjob.NewService(appjob.NewInMemoryRepository())
+	created, err := jobService.CreateQueuedJob(context.Background(), appjob.CreateQueuedJobInput{
+		GroupID:     "group-1",
+		JobType:     "generate_framework_graph",
+		QueueName:   "graph",
+		MaxAttempts: 3,
+	})
+	if err != nil {
+		t.Fatalf("CreateQueuedJob() error = %v", err)
+	}
+
+	server := NewServer(Dependencies{
+		GroupService: appgroup.NewService(appgroup.NewInMemoryRepository()),
+		JobService:   jobService,
+	})
+
+	cancelResp := performJSONRequest(t, server, http.MethodPost, "/api/v1/jobs/"+created.Job.ID+"/cancel", nil)
+	if cancelResp.Code != http.StatusOK {
+		t.Fatalf("cancel status = %d body=%s", cancelResp.Code, cancelResp.Body.String())
+	}
+	var cancelled map[string]any
+	decodeJSONResponse(t, cancelResp, &cancelled)
+	if cancelled["status"] != "cancelled" {
+		t.Fatalf("cancelled status = %v", cancelled["status"])
+	}
+
+	resumeResp := performJSONRequest(t, server, http.MethodPost, "/api/v1/jobs/"+created.Job.ID+"/resume", nil)
+	if resumeResp.Code != http.StatusOK {
+		t.Fatalf("resume status = %d body=%s", resumeResp.Code, resumeResp.Body.String())
+	}
+	var resumed map[string]any
+	decodeJSONResponse(t, resumeResp, &resumed)
+	if resumed["status"] != "queued" {
+		t.Fatalf("resumed status = %v", resumed["status"])
+	}
+}

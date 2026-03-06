@@ -395,6 +395,12 @@ func (s *Server) handleGroupSubresource(w http.ResponseWriter, r *http.Request, 
 			return
 		}
 		s.handleUploadResource(w, r, groupID)
+	case len(parts) == 2 && parts[0] == "resources" && parts[1] == "presign" && r.Method == http.MethodPost:
+		if s.resourceService == nil {
+			writeError(w, r, apperror.New(apperror.CodeInternal, "resource service not configured"))
+			return
+		}
+		s.handlePresignUpload(w, r, groupID)
 	case len(parts) == 1 && parts[0] == "resources" && r.Method == http.MethodGet:
 		if s.resourceService == nil {
 			writeError(w, r, apperror.New(apperror.CodeInternal, "resource service not configured"))
@@ -571,6 +577,16 @@ func (s *Server) handleJobsRoot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method != http.MethodGet {
+		path := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/jobs/"), "/")
+		parts := strings.Split(path, "/")
+		if len(parts) == 2 && r.Method == http.MethodPost && parts[1] == "cancel" {
+			s.handleCancelJob(w, r, parts[0])
+			return
+		}
+		if len(parts) == 2 && r.Method == http.MethodPost && parts[1] == "resume" {
+			s.handleResumeJob(w, r, parts[0])
+			return
+		}
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
@@ -585,6 +601,24 @@ func (s *Server) handleJobsRoot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, toJobStatusResponse(job))
+}
+
+func (s *Server) handleCancelJob(w http.ResponseWriter, r *http.Request, jobID string) {
+	result, err := s.jobService.CancelJob(r.Context(), jobID)
+	if err != nil {
+		writeError(w, r, apperror.New(apperror.CodeInvalidArgument, err.Error()))
+		return
+	}
+	writeJSON(w, http.StatusOK, toJobStatusResponse(result.Job))
+}
+
+func (s *Server) handleResumeJob(w http.ResponseWriter, r *http.Request, jobID string) {
+	result, err := s.jobService.ResumeJob(r.Context(), jobID)
+	if err != nil {
+		writeError(w, r, apperror.New(apperror.CodeInvalidArgument, err.Error()))
+		return
+	}
+	writeJSON(w, http.StatusOK, toJobStatusResponse(result.Job))
 }
 
 func (s *Server) handleResourcesRoot(w http.ResponseWriter, r *http.Request) {
@@ -617,6 +651,15 @@ func (s *Server) handleResourcesRoot(w http.ResponseWriter, r *http.Request) {
 				"job_id":      result.Job.ID,
 			},
 		})
+		writeJSON(w, http.StatusOK, toResourceWithJobResponse(result))
+		return
+	}
+	if len(parts) == 2 && parts[1] == "complete-upload" && r.Method == http.MethodPost {
+		result, err := s.resourceService.CompletePresignedUpload(r.Context(), parts[0])
+		if err != nil {
+			writeError(w, r, err)
+			return
+		}
 		writeJSON(w, http.StatusOK, toResourceWithJobResponse(result))
 		return
 	}
@@ -666,6 +709,36 @@ func (s *Server) handleUploadResource(w http.ResponseWriter, r *http.Request, gr
 		},
 	})
 	writeJSON(w, http.StatusCreated, toResourceWithJobResponse(result))
+}
+
+func (s *Server) handlePresignUpload(w http.ResponseWriter, r *http.Request, groupID string) {
+	var req struct {
+		Filename    string `json:"filename"`
+		ContentType string `json:"content_type"`
+		ExpiresIn   int    `json:"expires_in"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, r, apperror.New(apperror.CodeInvalidArgument, "invalid json body"))
+		return
+	}
+	plan, err := s.resourceService.PresignUpload(r.Context(), appresource.PresignUploadInput{
+		GroupID:     groupID,
+		Filename:    req.Filename,
+		ContentType: req.ContentType,
+		ExpiresIn:   time.Duration(req.ExpiresIn) * time.Second,
+	})
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"resource":   toResourceResponse(plan.Resource),
+		"upload_url": plan.UploadURL,
+		"method":     plan.Method,
+		"headers":    plan.Headers,
+		"object_key": plan.ObjectKey,
+		"expires_at": plan.ExpiresAt.Format(time.RFC3339Nano),
+	})
 }
 
 func (s *Server) handleCreateWebResource(w http.ResponseWriter, r *http.Request, groupID string) {

@@ -68,3 +68,48 @@ func TestUpdateJobStatusTracksHistory(t *testing.T) {
 		t.Fatalf("events = %d, want 3", len(events))
 	}
 }
+
+func TestCancelAndResumeJob(t *testing.T) {
+	repo := NewInMemoryRepository()
+	service := NewService(repo)
+
+	created, err := service.CreateQueuedJob(context.Background(), CreateQueuedJobInput{
+		GroupID:    "group-1",
+		ResourceID: "resource-1",
+		JobType:    "parse_resource",
+		QueueName:  "default",
+	})
+	if err != nil {
+		t.Fatalf("CreateQueuedJob() error = %v", err)
+	}
+
+	cancelled, err := service.CancelJob(context.Background(), created.Job.ID)
+	if err != nil {
+		t.Fatalf("CancelJob() error = %v", err)
+	}
+	if cancelled.Job.Status != StatusCancelled {
+		t.Fatalf("status = %s, want cancelled", cancelled.Job.Status)
+	}
+
+	resumed, err := service.ResumeJob(context.Background(), created.Job.ID)
+	if err != nil {
+		t.Fatalf("ResumeJob() error = %v", err)
+	}
+	if resumed.Job.Status != StatusQueued {
+		t.Fatalf("status = %s, want queued", resumed.Job.Status)
+	}
+
+	events, err := repo.ListEvents(context.Background(), created.Job.ID)
+	if err != nil {
+		t.Fatalf("ListEvents() error = %v", err)
+	}
+	if len(events) != 3 {
+		t.Fatalf("events = %d, want 3", len(events))
+	}
+	if events[1].Type != EventCancelled {
+		t.Fatalf("cancel event = %s, want cancelled", events[1].Type)
+	}
+	if events[2].Type != EventQueued {
+		t.Fatalf("resume event = %s, want queued", events[2].Type)
+	}
+}

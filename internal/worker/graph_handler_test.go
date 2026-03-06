@@ -5,7 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"net/http"
 	"testing"
+	"time"
 
 	appgraph "github.com/tylor/goaipj/internal/app/graph"
 	appgroup "github.com/tylor/goaipj/internal/app/group"
@@ -83,4 +85,13 @@ func (f *fakeStorageClient) GetObject(_ context.Context, bucket, key string) (io
 func (f *fakeStorageClient) DeleteObject(_ context.Context, bucket, key string) error {
 	_, _ = bucket, key
 	return nil
+}
+
+func (f *fakeStorageClient) PresignPutObject(_ context.Context, bucket, key string, _ time.Duration, opts storage.PutObjectOptions) (string, http.Header, error) {
+	_ = bucket
+	header := http.Header{}
+	if opts.ContentType != "" {
+		header.Set("Content-Type", opts.ContentType)
+	}
+	return "https://uploads.example.test/" + key, header, nil
 }

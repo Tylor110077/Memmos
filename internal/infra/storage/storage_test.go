@@ -4,7 +4,10 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"net/http"
+	"net/url"
 	"testing"
+	"time"
 )
 
 func TestResourceObjectKeyBuilder(t *testing.T) {
@@ -83,6 +86,33 @@ func TestDeleteObjectRemovesStoredKey(t *testing.T) {
 	}
 }
 
+func TestPresignPutObjectReturnsURLAndHeaders(t *testing.T) {
+	client := &fakeBucketClient{}
+	store := NewStore(client, "bucket-a")
+
+	plan, err := store.PresignPutObject(context.Background(), PresignPutObjectInput{
+		Key:         ResourceObjectKey("group-1", "resource-2", KindRaw, "notes.pdf"),
+		ContentType: "application/pdf",
+		ExpiresIn:   15 * time.Minute,
+	})
+	if err != nil {
+		t.Fatalf("PresignPutObject() error = %v", err)
+	}
+	if plan.Method != "PUT" {
+		t.Fatalf("method = %q, want PUT", plan.Method)
+	}
+	if plan.Headers["Content-Type"] != "application/pdf" {
+		t.Fatalf("content-type = %q", plan.Headers["Content-Type"])
+	}
+	parsed, err := url.Parse(plan.URL)
+	if err != nil {
+		t.Fatalf("url.Parse() error = %v", err)
+	}
+	if parsed.Scheme == "" || parsed.Host == "" {
+		t.Fatalf("expected absolute URL, got %q", plan.URL)
+	}
+}
+
 type fakeBucketClient struct {
 	lastBucket string
 	lastKey    string
@@ -113,4 +143,14 @@ func (f *fakeBucketClient) DeleteObject(ctx context.Context, bucket, key string)
 	_ = ctx
 	delete(f.objects, bucket+"/"+key)
 	return nil
+}
+
+func (f *fakeBucketClient) PresignPutObject(ctx context.Context, bucket, key string, expires time.Duration, opts PutObjectOptions) (string, http.Header, error) {
+	_ = ctx
+	_ = expires
+	header := http.Header{}
+	if opts.ContentType != "" {
+		header.Set("Content-Type", opts.ContentType)
+	}
+	return "https://uploads.example.test/" + bucket + "/" + key, header, nil
 }

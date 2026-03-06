@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
+	appcleanup "github.com/tylor/goaipj/internal/app/cleanup"
 	appgraph "github.com/tylor/goaipj/internal/app/graph"
 	appresource "github.com/tylor/goaipj/internal/app/resource"
 	pipelinegraph "github.com/tylor/goaipj/internal/pipeline/graph"
@@ -27,6 +28,7 @@ type Dependencies struct {
 	GraphService       *appgraph.Service
 	GraphGenerator     *pipelinegraph.Generator
 	ExpansionGenerator expansionGenerator
+	CleanupService     *appcleanup.Service
 }
 
 type Registry struct {
@@ -51,9 +53,14 @@ func (r *Registry) RegisterAll(registrar Registrar) {
 	}
 	if r.deps.GraphService != nil && r.deps.ExpansionGenerator != nil {
 		registrar.Handle(TaskExpandNode, NewExpandNodeHandler(r.deps.GraphService, r.deps.ExpansionGenerator))
+	} else {
+		registrar.Handle(TaskExpandNode, decodeNoopHandler())
+	}
+	if r.deps.CleanupService != nil {
+		registrar.Handle(TaskCleanup, NewCleanupHandler(r.deps.CleanupService))
 		return
 	}
-	registrar.Handle(TaskExpandNode, decodeNoopHandler())
+	registrar.Handle(TaskCleanup, decodeNoopHandler())
 }
 
 func decodeNoopHandler() Handler {

@@ -17,6 +17,7 @@ const (
 	StatusRunning Status = "running"
 	StatusDone    Status = "done"
 	StatusFailed  Status = "failed"
+	StatusCancelled Status = "cancelled"
 )
 
 type EventType string
@@ -26,6 +27,7 @@ const (
 	EventRunning EventType = "running"
 	EventDone    EventType = "done"
 	EventFailed  EventType = "failed"
+	EventCancelled EventType = "cancelled"
 )
 
 type Job struct {
@@ -159,6 +161,34 @@ func (s *Service) MarkFailed(ctx context.Context, jobID string, message string) 
 	return s.transition(ctx, jobID, StatusFailed, EventFailed, message, func(job *Job, now time.Time) {
 		job.ErrorMessage = message
 		job.FinishedAt = &now
+	})
+}
+
+func (s *Service) CancelJob(ctx context.Context, jobID string) (Result, error) {
+	job, err := s.repo.GetJob(ctx, jobID)
+	if err != nil {
+		return Result{}, err
+	}
+	if job.Status != StatusQueued && job.Status != StatusRunning {
+		return Result{}, errors.New("job is not cancellable")
+	}
+	return s.transition(ctx, jobID, StatusCancelled, EventCancelled, "job cancelled", func(job *Job, now time.Time) {
+		job.FinishedAt = &now
+	})
+}
+
+func (s *Service) ResumeJob(ctx context.Context, jobID string) (Result, error) {
+	job, err := s.repo.GetJob(ctx, jobID)
+	if err != nil {
+		return Result{}, err
+	}
+	if job.Status != StatusCancelled && job.Status != StatusFailed {
+		return Result{}, errors.New("job is not resumable")
+	}
+	return s.transition(ctx, jobID, StatusQueued, EventQueued, "job resumed", func(job *Job, _ time.Time) {
+		job.FinishedAt = nil
+		job.StartedAt = nil
+		job.ErrorMessage = ""
 	})
 }
 

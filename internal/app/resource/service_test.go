@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"net/http"
 	"testing"
+	"time"
 
 	appgroup "github.com/tylor/goaipj/internal/app/group"
 	"github.com/tylor/goaipj/internal/domain/resource"
@@ -220,6 +222,45 @@ func TestDeleteResourceRemovesStoredArtifacts(t *testing.T) {
 	}
 }
 
+func TestPresignAndCompleteUploadQueuesParseJob(t *testing.T) {
+	groupService := newGroupService(t)
+	repo := NewInMemoryRepository()
+	artifacts := NewInMemoryArtifactRepository()
+	bucket := newFakeBucketClient()
+	jobs := NewInMemoryJobPublisher()
+	service := NewService(
+		groupService,
+		repo,
+		artifacts,
+		jobs,
+		storage.NewStore(bucket, "test-bucket"),
+	)
+
+	plan, err := service.PresignUpload(context.Background(), PresignUploadInput{
+		GroupID:     existingGroupID(t, groupService),
+		Filename:    "notes.pdf",
+		ContentType: "application/pdf",
+		ExpiresIn:   10 * time.Minute,
+	})
+	if err != nil {
+		t.Fatalf("PresignUpload() error = %v", err)
+	}
+	if plan.UploadURL == "" {
+		t.Fatalf("expected upload url")
+	}
+	if plan.Method != "PUT" {
+		t.Fatalf("method = %q, want PUT", plan.Method)
+	}
+
+	completed, err := service.CompletePresignedUpload(context.Background(), plan.Resource.ID)
+	if err != nil {
+		t.Fatalf("CompletePresignedUpload() error = %v", err)
+	}
+	if completed.Job.Type != JobTypeParseResource {
+		t.Fatalf("job type = %s, want %s", completed.Job.Type, JobTypeParseResource)
+	}
+}
+
 func newGroupService(t *testing.T) *appgroup.Service {
 	t.Helper()
 	repo := appgroup.NewInMemoryRepository()
@@ -264,4 +305,12 @@ func (f *fakeBucketClient) GetObject(_ context.Context, bucket, key string) (io.
 func (f *fakeBucketClient) DeleteObject(_ context.Context, bucket, key string) error {
 	delete(f.objects, bucket+"/"+key)
 	return nil
+}
+
+func (f *fakeBucketClient) PresignPutObject(_ context.Context, bucket, key string, _ time.Duration, opts storage.PutObjectOptions) (string, http.Header, error) {
+	header := http.Header{}
+	if opts.ContentType != "" {
+		header.Set("Content-Type", opts.ContentType)
+	}
+	return "https://uploads.example.test/" + bucket + "/" + key, header, nil
 }

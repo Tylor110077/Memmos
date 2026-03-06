@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	appgraph "github.com/tylor/goaipj/internal/app/graph"
 	appgroup "github.com/tylor/goaipj/internal/app/group"
@@ -116,6 +117,30 @@ func TestResourceEndpoints(t *testing.T) {
 		t.Fatalf("retry status = %d, want 400 because uploaded resources cannot retry", retryResp.Code)
 	}
 
+	presignResp := performJSONRequest(t, server, http.MethodPost, "/api/v1/groups/"+group.ID+"/resources/presign", map[string]any{
+		"filename":     "slides.pdf",
+		"content_type": "application/pdf",
+		"expires_in":   int((10 * time.Minute).Seconds()),
+	})
+	if presignResp.Code != http.StatusCreated {
+		t.Fatalf("presign status = %d body=%s", presignResp.Code, presignResp.Body.String())
+	}
+	var presigned struct {
+		Resource  resourceResponse  `json:"resource"`
+		UploadURL string            `json:"upload_url"`
+		Method    string            `json:"method"`
+		Headers   map[string]string `json:"headers"`
+	}
+	decodeJSONResponse(t, presignResp, &presigned)
+	if presigned.Resource.ID == "" || presigned.UploadURL == "" {
+		t.Fatalf("expected resource id and upload url")
+	}
+
+	completeResp := performJSONRequest(t, server, http.MethodPost, "/api/v1/resources/"+presigned.Resource.ID+"/complete-upload", nil)
+	if completeResp.Code != http.StatusOK {
+		t.Fatalf("complete status = %d body=%s", completeResp.Code, completeResp.Body.String())
+	}
+
 	deleteResp := performJSONRequest(t, server, http.MethodDelete, "/api/v1/resources/"+created.Resource.ID, nil)
 	if deleteResp.Code != http.StatusNoContent {
 		t.Fatalf("delete status = %d body=%s", deleteResp.Code, deleteResp.Body.String())
@@ -180,4 +205,12 @@ func (f *httpFakeBucketClient) GetObject(_ context.Context, bucket, key string) 
 func (f *httpFakeBucketClient) DeleteObject(_ context.Context, bucket, key string) error {
 	delete(f.objects, bucket+"/"+key)
 	return nil
+}
+
+func (f *httpFakeBucketClient) PresignPutObject(_ context.Context, bucket, key string, _ time.Duration, opts storage.PutObjectOptions) (string, http.Header, error) {
+	header := http.Header{}
+	if opts.ContentType != "" {
+		header.Set("Content-Type", opts.ContentType)
+	}
+	return "https://uploads.example.test/" + bucket + "/" + key, header, nil
 }

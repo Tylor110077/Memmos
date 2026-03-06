@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"time"
 
 	appchat "github.com/tylor/goaipj/internal/app/chat"
 	appgraph "github.com/tylor/goaipj/internal/app/graph"
@@ -81,4 +82,12 @@ func (c *memoryBucketClient) GetObject(_ context.Context, bucket, key string) (i
 func (c *memoryBucketClient) DeleteObject(_ context.Context, bucket, key string) error {
 	delete(c.objects, bucket+"/"+key)
 	return nil
+}
+
+func (c *memoryBucketClient) PresignPutObject(_ context.Context, bucket, key string, _ time.Duration, opts storage.PutObjectOptions) (string, http.Header, error) {
+	header := http.Header{}
+	if opts.ContentType != "" {
+		header.Set("Content-Type", opts.ContentType)
+	}
+	return "https://uploads.example.test/" + bucket + "/" + key, header, nil
 }

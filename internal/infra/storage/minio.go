@@ -3,6 +3,8 @@ package storage
 import (
 	"context"
 	"io"
+	"net/http"
+	"time"
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
@@ -50,4 +52,16 @@ func (m *minioBucketClient) GetObject(ctx context.Context, bucket, key string) (
 
 func (m *minioBucketClient) DeleteObject(ctx context.Context, bucket, key string) error {
 	return m.client.RemoveObject(ctx, bucket, key, minio.RemoveObjectOptions{})
+}
+
+func (m *minioBucketClient) PresignPutObject(ctx context.Context, bucket, key string, expires time.Duration, opts PutObjectOptions) (string, http.Header, error) {
+	url, err := m.client.PresignedPutObject(ctx, bucket, key, expires)
+	if err != nil {
+		return "", nil, err
+	}
+	header := http.Header{}
+	if opts.ContentType != "" {
+		header.Set("Content-Type", opts.ContentType)
+	}
+	return url.String(), header, nil
 }
