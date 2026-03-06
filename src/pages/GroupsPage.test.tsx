@@ -40,4 +40,14 @@ describe("GroupsPage", () => {
       expect(screen.getAllByRole("link", { name: "进入分组" })[0].closest(".group-card")).toHaveTextContent(groupName),
     );
   });
+
+  it("opens create modal from the empty add card", async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByRole("button", { name: /新建一个学习分组/ });
+    await user.click(screen.getByRole("button", { name: /新建一个学习分组/ }));
+
+    expect(screen.getByRole("dialog", { name: "创建分组" })).toBeInTheDocument();
+  });
 });

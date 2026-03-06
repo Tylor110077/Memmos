@@ -358,6 +358,12 @@ h6 {
   flex-direction: column;
 }
 
+.group-card-action {
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+}
+
 .group-card h4 {
   margin-top: 18px;
   margin-bottom: 12px;

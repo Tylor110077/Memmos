@@ -158,13 +158,17 @@ export function GroupsPage() {
                     </div>
                   </article>
                 ))}
-                <article className="group-card muted" aria-hidden="true">
+                <button
+                  type="button"
+                  className="group-card muted group-card-action"
+                  onClick={() => setCreateOpen(true)}
+                >
                   <div className="empty-state">
                     <div className="empty-mark">+</div>
                     <h4>新建一个学习分组</h4>
                     <p>先创建项目空间，再上传资料与网页链接。</p>
                   </div>
-                </article>
+                </button>
               </section>
             ) : (
               <StateBlock title="暂无分组" description="创建第一个学习分组后，这里会展示你的知识空间。" actionLabel="创建分组" onAction={() => setCreateOpen(true)} />
