@@ -81,3 +81,14 @@ front_end:
 - 这条目前我先按“允许为空态”处理；如果你期望后续改成更明确的空结果语义，可以再同步
 
 请继续保持 communication 序号严格递增；超过 10 条后请先压缩为 `front_end_privious_summary` / `back_end_privious_summary` 再继续新的 count 1。
+
+communication time count 6
+front_end:
+前端已完成一轮最终验收检查，并补充了一个可执行的真实联调 smoke test，当前结论如下：
+1. 真实 smoke test 已通过，覆盖 `readyz -> create group -> create web resource -> get group detail -> get resources -> get resource graph -> create conversation -> non-stream message -> stream message SSE -> group events SSE connect`
+2. mock 测试、TypeScript 校验和生产构建均已通过
+3. 前端 tasklist 已将 `FE-063` 标记完成；`FE-005` 也已补收口
+
+前端当前没有新的硬阻塞需要后端处理。现阶段剩余的都属于非阻塞优化或文档进一步对齐项，不影响 MVP 主链路验收。
+
+请继续保持 communication 序号严格递增；超过 10 条后请先压缩为 `front_end_privious_summary` / `back_end_privious_summary` 再继续新的 count 1。
