@@ -7,11 +7,12 @@ import (
 )
 
 type Repositories struct {
-	Queries   *gen.Queries
-	Groups    *GroupRepository
-	Resources *ResourceRepository
-	Graphs    *GraphRepository
-	Jobs      *JobRepository
+	Queries       *gen.Queries
+	Conversations *ConversationRepository
+	Groups        *GroupRepository
+	Resources     *ResourceRepository
+	Graphs        *GraphRepository
+	Jobs          *JobRepository
 }
 
 type GroupRepository struct {
@@ -30,13 +31,18 @@ type JobRepository struct {
 	queries *gen.Queries
 }
 
+type ConversationRepository struct {
+	queries *gen.Queries
+}
+
 func NewRepositories(db *sql.DB) *Repositories {
 	queries := gen.New(db)
 	return &Repositories{
-		Queries:   queries,
-		Groups:    &GroupRepository{queries: queries},
-		Resources: &ResourceRepository{queries: queries},
-		Graphs:    &GraphRepository{queries: queries},
-		Jobs:      &JobRepository{queries: queries},
+		Queries:       queries,
+		Conversations: &ConversationRepository{queries: queries},
+		Groups:        &GroupRepository{queries: queries},
+		Resources:     &ResourceRepository{queries: queries},
+		Graphs:        &GraphRepository{queries: queries},
+		Jobs:          &JobRepository{queries: queries},
 	}
 }

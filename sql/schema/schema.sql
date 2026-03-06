@@ -62,6 +62,27 @@ create table graph_edges (
     created_at timestamptz not null
 );
 
+create table conversations (
+    id text primary key,
+    group_id text not null references groups(id),
+    graph_id text references graphs(id),
+    node_id text references graph_nodes(id),
+    title text,
+    created_at timestamptz not null,
+    updated_at timestamptz not null
+);
+
+create table conversation_messages (
+    id text primary key,
+    conversation_id text not null references conversations(id),
+    role text not null,
+    content text not null,
+    cited_chunk_ids text[] not null,
+    cited_node_ids text[] not null,
+    context_snapshot jsonb not null,
+    created_at timestamptz not null
+);
+
 create table processing_jobs (
     id text primary key,
     group_id text not null references groups(id),

@@ -12,6 +12,7 @@ require (
 	github.com/hibiken/asynq v0.25.1 // indirect
 	github.com/klauspost/compress v1.17.11 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.9 // indirect
+	github.com/lib/pq v1.10.9 // indirect
 	github.com/minio/md5-simd v1.1.2 // indirect
 	github.com/minio/minio-go/v7 v7.0.83 // indirect
 	github.com/redis/go-redis/v9 v9.7.0 // indirect

@@ -10,6 +10,27 @@ import (
 	"time"
 )
 
+type Conversation struct {
+	ID        string         `json:"id"`
+	GroupID   string         `json:"group_id"`
+	GraphID   sql.NullString `json:"graph_id"`
+	NodeID    sql.NullString `json:"node_id"`
+	Title     sql.NullString `json:"title"`
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
+}
+
+type ConversationMessage struct {
+	ID              string          `json:"id"`
+	ConversationID  string          `json:"conversation_id"`
+	Role            string          `json:"role"`
+	Content         string          `json:"content"`
+	CitedChunkIds   []string        `json:"cited_chunk_ids"`
+	CitedNodeIds    []string        `json:"cited_node_ids"`
+	ContextSnapshot json.RawMessage `json:"context_snapshot"`
+	CreatedAt       time.Time       `json:"created_at"`
+}
+
 type Graph struct {
 	ID         string         `json:"id"`
 	GroupID    string         `json:"group_id"`

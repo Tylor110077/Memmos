@@ -8,6 +8,7 @@ sql:
       - "sql/queries/resources.sql"
       - "sql/queries/graphs.sql"
       - "sql/queries/jobs.sql"
+      - "sql/queries/conversations.sql"
     gen:
       go:
         package: "gen"

@@ -14,6 +14,9 @@ func TestNewRepositoriesWiresGeneratedQueries(t *testing.T) {
 	if repos.Groups == nil {
 		t.Fatalf("expected group repository")
 	}
+	if repos.Conversations == nil {
+		t.Fatalf("expected conversation repository")
+	}
 	if repos.Resources == nil {
 		t.Fatalf("expected resource repository")
 	}
