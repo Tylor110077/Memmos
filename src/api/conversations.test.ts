@@ -112,4 +112,51 @@ describe("streamConversationMessage", () => {
     expect(response.assistant_message.citations.chunk_ids).toEqual(["chunk_001"]);
     expect(response.assistant_message.citations.node_ids).toEqual(["root"]);
   });
+
+  it("supports backend assistant.delta and assistant.message stream events", async () => {
+    const doneMessage: ConversationMessage = {
+      id: "msg_assistant_002",
+      conversation_id: "conv_001",
+      current_node_id: "root",
+      role: "assistant",
+      content: "Graph Ready Resource is the current focus node.",
+      citations: {
+        chunk_ids: [],
+        node_ids: ["root"],
+      },
+      created_at: "2026-03-06T12:33:00Z",
+    };
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      createStreamResponse([
+        'event: assistant.delta\ndata: {"delta":"Graph Ready Resource "}\n\n',
+        'event: assistant.delta\ndata: {"delta":"is the current focus node."}\n\n',
+        `event: assistant.message\ndata: ${JSON.stringify({
+          assistant_message: {
+            id: "msg_assistant_002",
+            conversation_id: "conv_001",
+            role: "assistant",
+            content: "Graph Ready Resource is the current focus node.",
+            cited_chunk_ids: [],
+            cited_node_ids: ["root"],
+            context_snapshot: { current_node_id: "root" },
+            created_at: "2026-03-06T12:33:00Z",
+          },
+        })}\n\n`,
+        'event: done\ndata: {"done":true}\n\n',
+      ]),
+    );
+
+    const handlers = {
+      onStart: vi.fn(),
+      onDelta: vi.fn(),
+      onDone: vi.fn(),
+    };
+
+    await streamConversationMessage("conv_001", "解释一下", handlers);
+
+    expect(handlers.onStart).not.toHaveBeenCalled();
+    expect(handlers.onDelta).toHaveBeenNthCalledWith(1, "Graph Ready Resource ");
+    expect(handlers.onDelta).toHaveBeenNthCalledWith(2, "is the current focus node.");
+    expect(handlers.onDone).toHaveBeenCalledWith(doneMessage);
+  });
 });

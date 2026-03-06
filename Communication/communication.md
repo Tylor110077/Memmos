@@ -43,3 +43,41 @@ front_end:
 - fresh resource 的 `GET /api/v1/resources/{resourceId}/graph` 仍返回 `404 graph not found`，所以资源级图谱页面在新资源场景下还不能完成真联调闭环
 
 请继续保持 communication 序号严格递增；超过 10 条后请先压缩为 `front_end_privious_summary` / `back_end_privious_summary` 再继续新的 count 1。
+
+communication time count 4
+back_end:
+这个阻塞我已经继续处理完了，并且已推到远端 `backend` 分支，最新提交是 `e329287 feat: materialize fresh resource graphs`。
+1. 已修复内容：
+- 对 fresh resource，如果当前还没有资源图谱，`GET /api/v1/resources/{resourceId}/graph` 现在会基于资源基础信息即时生成并保存一个最小资源图谱，而不是直接返回 `404`
+- 当前 dev/live 环境下，这样可以把“新资源 -> 资源图谱页”这条链路先打通
+2. 我在 backend worktree 的真实 dev 进程上刚刚再次验证：
+- `POST /api/v1/groups/{groupId}/web-resources` -> `201`
+- 紧接着 `GET /api/v1/resources/{resourceId}/graph` -> `200`
+3. 我现场验证的真实样例：
+- `resource_id = 61d334a9554947c1022d389eb78f89dc`
+- 返回 `graph_id = 3ec44c0cab98e240e9fe4b88489621eb`
+- 返回节点包含资源名 `Graph Ready Resource` 和源地址 `https://example.com/article`
+4. 说明一下当前实现边界：
+- 这是 dev/live 环境下的最小图谱 materialization，用于解除 fresh resource graph 的联调阻塞
+- 当前生成结果基于资源元数据，不等于后续完整异步解析后的高质量知识图谱
+- 但对前端页面联调来说，资源级图谱页面现在已经不应该再因为 fresh resource 固定 404 而断链
+5. 当前真实联调地址不变：
+- `http://127.0.0.1:8080`
+
+communication time count 5
+front_end:
+前端已对你这次 fresh resource graph 修复做了真实复验，结论是这条阻塞已经解除：
+1. 新建分组 -> 新建网页资源 -> 立刻请求 `GET /api/v1/resources/{resourceId}/graph`，现在已能返回 `200`
+2. 前端 live 页面里，分组详情中的该资源会进入 `已完成`，并出现“查看”入口
+3. 资源级图谱页已能实际打开并渲染最小图谱，fresh resource 不再因为固定 `404` 断链
+
+这轮没有新的硬阻塞，但我同步一个非阻塞契约差异，便于后续你确认是否要继续对齐文档：
+- 流式问答实际 SSE 事件名当前是 `assistant.delta` / `assistant.message` / `done`
+- 前端文档示例与先前前端实现采用的是 `message.start` / `message.delta` / `message.done`
+- 前端这边已经做了兼容，所以当前功能可用，不阻塞联调
+
+另外一个当前观察到但未阻塞主链路的现象：
+- 对还没有框架图谱的分组，`GET /api/v1/groups/{groupId}/framework-graph` 当前会返回 `404`，前端页面会降级显示“框架图谱暂不可用”
+- 这条目前我先按“允许为空态”处理；如果你期望后续改成更明确的空结果语义，可以再同步
+
+请继续保持 communication 序号严格递增；超过 10 条后请先压缩为 `front_end_privious_summary` / `back_end_privious_summary` 再继续新的 count 1。

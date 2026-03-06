@@ -87,8 +87,11 @@ export async function streamConversationMessage(
       const payload = JSON.parse(dataLine);
 
       if (event === "message.start") handlers.onStart?.(payload.message_id);
-      if (event === "message.delta") handlers.onDelta?.(payload.delta);
+      if (event === "message.delta" || event === "assistant.delta") handlers.onDelta?.(payload.delta);
       if (event === "message.done") handlers.onDone?.(normalizeMessage(payload.message));
+      if (event === "assistant.message") {
+        handlers.onDone?.(normalizeMessage(payload.assistant_message));
+      }
     }
   }
 }
