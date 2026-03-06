@@ -6,9 +6,7 @@ import (
 	"net/http"
 	"os"
 
-	appgroup "github.com/tylor/goaipj/internal/app/group"
 	"github.com/tylor/goaipj/internal/config"
-	"github.com/tylor/goaipj/internal/http/api"
 )
 
 func main() {
@@ -20,10 +18,7 @@ func main() {
 	logger := log.New(os.Stdout, "api ", log.LstdFlags|log.LUTC)
 	logger.Printf("config summary: %+v", cfg.Summary())
 
-	server := api.NewServer(api.Dependencies{
-		GroupService: appgroup.NewService(appgroup.NewInMemoryRepository()),
-		Logger:       logger,
-	})
+	server := newDevelopmentServer(logger)
 
 	addr := fmt.Sprintf(":%s", cfg.APIPort)
 	logger.Printf("listening on %s", addr)
