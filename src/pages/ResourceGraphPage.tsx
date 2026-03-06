@@ -6,16 +6,19 @@ import { Breadcrumbs } from "@/components/layout/Breadcrumbs";
 import { KnowledgeGraph } from "@/components/graph/KnowledgeGraph";
 import { Button } from "@/components/ui/Button";
 import { StateBlock } from "@/components/ui/StateBlock";
-import { useConversation, useCreateConversation, useSendMessage } from "@/hooks/useConversation";
+import { useConversation, useCreateConversation, useStreamMessage } from "@/hooks/useConversation";
 import { useExpandNode, useNodeDetail, useResourceGraph } from "@/hooks/useGraphs";
 import { useGroupEvents } from "@/hooks/useGroupEvents";
 import { useResourceDetail } from "@/hooks/useResources";
 import { useGraphWorkbenchStore } from "@/store/graphWorkbench";
+import type { ConversationMessage } from "@/api/types";
 
 export function ResourceGraphPage() {
   const { groupId = "", resourceId = "" } = useParams();
   const [draft, setDraft] = useState("");
-  const [conversationId, setConversationId] = useState<string>("conv_loop");
+  const [conversationId, setConversationId] = useState<string>(import.meta.env.VITE_API_MODE === "live" ? "" : "conv_loop");
+  const [pendingUserMessage, setPendingUserMessage] = useState<ConversationMessage | null>(null);
+  const [streamingMessage, setStreamingMessage] = useState<ConversationMessage | null>(null);
   const { pushToast } = useToast();
   const resourceQuery = useResourceDetail(resourceId);
   useGroupEvents(groupId);
@@ -28,7 +31,7 @@ export function ResourceGraphPage() {
   const expandMutation = useExpandNode(graphId, resourceId, groupId);
   const createConversation = useCreateConversation();
   const conversationQuery = useConversation(conversationId);
-  const sendMessage = useSendMessage(conversationId);
+  const streamMessage = useStreamMessage(conversationId);
 
   useEffect(() => {
     return () => reset();
@@ -40,7 +43,11 @@ export function ResourceGraphPage() {
     }
   }, [graphQuery.data?.graph.root_node_id, selectedNodeId, setSelectedNodeId]);
 
-  const messages = conversationQuery.data?.messages ?? [];
+  const messages = [
+    ...(conversationQuery.data?.messages ?? []),
+    ...(pendingUserMessage ? [pendingUserMessage] : []),
+    ...(streamingMessage ? [streamingMessage] : []),
+  ];
   const resource = resourceQuery.data;
 
   const navItems = useMemo(
@@ -69,13 +76,58 @@ export function ResourceGraphPage() {
   async function handleSendMessage(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!draft.trim()) return;
+    const content = draft.trim();
     const existingConversationId = await ensureConversation();
     if (!conversationId) {
       setConversationId(existingConversationId);
     }
-    await sendMessage.mutateAsync(draft.trim());
-    setDraft("");
-    pushToast({ title: "问题已发送", description: "回答已围绕当前节点刷新。", tone: "success" });
+    const now = new Date().toISOString();
+    setPendingUserMessage({
+      id: `msg_pending_user_${now}`,
+      conversation_id: existingConversationId,
+      current_node_id: nodeId ?? "",
+      role: "user",
+      content,
+      citations: { chunk_ids: [], node_ids: [] },
+      created_at: now,
+    });
+    setStreamingMessage({
+      id: "msg_streaming_assistant",
+      conversation_id: existingConversationId,
+      current_node_id: nodeId ?? "",
+      role: "assistant",
+      content: "",
+      citations: { chunk_ids: [], node_ids: [] },
+      created_at: now,
+    });
+    try {
+      await streamMessage.mutateAsync({
+        conversationId: existingConversationId,
+        content,
+        handlers: {
+          onStart: (messageId) =>
+            setStreamingMessage((current) => (current ? { ...current, id: messageId } : current)),
+          onDelta: (delta) =>
+            setStreamingMessage((current) => (current ? { ...current, content: `${current.content}${delta}` } : current)),
+          onDone: (message) => {
+            setPendingUserMessage(null);
+            setStreamingMessage(message);
+          },
+        },
+      });
+      setPendingUserMessage(null);
+      setStreamingMessage(null);
+      setDraft("");
+      pushToast({ title: "问题已发送", description: "回答已围绕当前节点刷新。", tone: "success" });
+    } catch (error) {
+      setPendingUserMessage(null);
+      setStreamingMessage(null);
+      pushToast({
+        title: "发送失败",
+        description: error instanceof Error ? error.message : "当前问题发送失败，请稍后重试。",
+        tone: "error",
+      });
+    }
   }
 
   if (resource?.status === "failed") {
@@ -228,7 +280,7 @@ export function ResourceGraphPage() {
             <div className="panel-title">
               <h4>侧边栏对话</h4>
             </div>
-            <div className="chat-list">
+            <div className="chat-list" role="log" aria-live="polite" aria-busy={streamMessage.isPending}>
               {messages.map((message) => (
                 <div key={message.id} className={`chat-msg ${message.role === "user" ? "user" : "ai"}`}>
                   <span className="role">{message.role === "assistant" ? "助理" : message.role === "system" ? "系统" : "你"}</span>
@@ -243,15 +295,19 @@ export function ResourceGraphPage() {
               ))}
             </div>
             <form className="chat-form" onSubmit={handleSendMessage}>
+              <label className="sr-only" htmlFor="resource-graph-question">
+                输入问题
+              </label>
               <textarea
+                id="resource-graph-question"
                 className="chat-input"
                 rows={3}
                 placeholder="继续追问当前节点的意义、例子或相邻关系"
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
               />
-              <Button type="submit" disabled={sendMessage.isPending}>
-                {sendMessage.isPending ? "发送中..." : "发送问题"}
+              <Button type="submit" disabled={streamMessage.isPending}>
+                {streamMessage.isPending ? "发送中..." : "发送问题"}
               </Button>
             </form>
           </section>

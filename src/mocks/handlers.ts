@@ -29,6 +29,10 @@ function fail(code: string, message: string, status = 400) {
   );
 }
 
+function encodeSseChunk(event: string, data: unknown) {
+  return new TextEncoder().encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+}
+
 export const handlers = [
   http.get("/api/v1/groups", ({ request }) => {
     const url = new URL(request.url);
@@ -219,15 +223,43 @@ export const handlers = [
   }),
 
   http.post("/api/v1/conversations/:conversationId/messages", async ({ params, request }) => {
-    const body = (await request.json()) as { content: string };
+    const body = (await request.json()) as { content: string; stream?: boolean };
     const conversation = conversations[String(params.conversationId)];
     if (!conversation) {
       return fail("RESOURCE_NOT_FOUND", "conversation not found", 404);
     }
 
-    return ok<SendMessageResponse>(
-      appendConversationMessage(String(params.conversationId), conversation.conversation.current_node_id, body.content),
-    );
+    const response = appendConversationMessage(String(params.conversationId), conversation.conversation.current_node_id, body.content);
+
+    if (body.stream) {
+      const assistantMessage = response.assistant_message;
+      const mid = Math.max(1, Math.ceil(assistantMessage.content.length / 2));
+      const firstDelta = assistantMessage.content.slice(0, mid);
+      const secondDelta = assistantMessage.content.slice(mid);
+
+      const stream = new ReadableStream({
+        async start(controller) {
+          controller.enqueue(encodeSseChunk("message.start", { message_id: assistantMessage.id }));
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          controller.enqueue(encodeSseChunk("message.delta", { delta: firstDelta }));
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          controller.enqueue(encodeSseChunk("message.delta", { delta: secondDelta }));
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          controller.enqueue(encodeSseChunk("message.done", { message: assistantMessage }));
+          controller.close();
+        },
+      });
+
+      return new HttpResponse(stream, {
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          Connection: "keep-alive",
+        },
+      });
+    }
+
+    return ok<SendMessageResponse>(response);
   }),
 
   http.get("/api/v1/jobs/:jobId", ({ params }) => {

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
@@ -25,14 +25,19 @@ function renderPage() {
 describe("GroupsPage", () => {
   it("renders the list and can create a group", async () => {
     const user = userEvent.setup();
+    const groupName = "agent-test-group";
     renderPage();
 
     expect((await screen.findAllByText("LLM Agent 体系")).length).toBeGreaterThan(0);
 
     await user.click(screen.getAllByRole("button", { name: "创建分组" })[0]);
-    await user.type(screen.getByPlaceholderText("例如：LLM Agent 体系"), "测试分组");
+    fireEvent.change(screen.getByPlaceholderText("例如：LLM Agent 体系"), {
+      target: { value: groupName },
+    });
     await user.click(screen.getAllByRole("button", { name: "创建分组" })[1]);
 
-    await waitFor(() => expect(screen.getAllByText("测试分组").length).toBeGreaterThan(0));
+    await waitFor(() =>
+      expect(screen.getAllByRole("link", { name: "进入分组" })[0].closest(".group-card")).toHaveTextContent(groupName),
+    );
   });
 });

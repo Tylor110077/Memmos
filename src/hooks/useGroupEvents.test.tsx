@@ -50,4 +50,28 @@ describe("applyGroupEventToCache", () => {
     expect((queryClient.getQueryData(queryKeys.resources("grp_agent")) as any).items[0].status).toBe("graph_generating");
     expect((queryClient.getQueryData(queryKeys.resourceDetail("res_1")) as ResourceDetail).status).toBe("graph_generating");
   });
+
+  it("invalidates graph queries when expansion completes", () => {
+    const queryClient = new QueryClient();
+    queryClient.setQueryData(queryKeys.resourceGraph("res_1", { includeExpansion: true }), {
+      graph: { id: "graph_1" },
+      nodes: [],
+      edges: [],
+    });
+    queryClient.setQueryData(queryKeys.frameworkGraph("grp_agent", 2), {
+      graph: { id: "framework_1" },
+      nodes: [],
+      edges: [],
+    });
+
+    applyGroupEventToCache(queryClient as any, "graph.node.expanded", {
+      group_id: "grp_agent",
+      graph_id: "graph_1",
+      source_node_id: "node_1",
+      new_node_id: "node_2",
+    });
+
+    expect(queryClient.getQueryState(queryKeys.resourceGraph("res_1", { includeExpansion: true }))?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryState(queryKeys.frameworkGraph("grp_agent", 2))?.isInvalidated).toBe(true);
+  });
 });

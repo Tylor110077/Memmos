@@ -1,5 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createConversation, getConversation, sendConversationMessage } from "@/api/conversations";
+import {
+  createConversation,
+  getConversation,
+  sendConversationMessage,
+  streamConversationMessage,
+  type StreamConversationHandlers,
+} from "@/api/conversations";
 import { queryKeys } from "@/api/queryKeys";
 
 export function useConversation(conversationId?: string) {
@@ -30,6 +36,27 @@ export function useSendMessage(conversationId?: string) {
     onSuccess: async () => {
       if (conversationId) {
         await queryClient.invalidateQueries({ queryKey: queryKeys.conversation(conversationId) });
+      }
+    },
+  });
+}
+
+export function useStreamMessage(conversationId?: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      conversationId: targetConversationId,
+      content,
+      handlers,
+    }: {
+      conversationId?: string;
+      content: string;
+      handlers?: StreamConversationHandlers;
+    }) => streamConversationMessage(targetConversationId ?? conversationId ?? "", content, handlers),
+    onSuccess: async (_, variables) => {
+      const targetConversationId = variables.conversationId ?? conversationId;
+      if (targetConversationId) {
+        await queryClient.invalidateQueries({ queryKey: queryKeys.conversation(targetConversationId) });
       }
     },
   });

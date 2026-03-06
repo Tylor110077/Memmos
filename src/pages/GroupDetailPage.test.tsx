@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it } from "vitest";
@@ -27,15 +27,20 @@ function renderPage() {
 describe("GroupDetailPage", () => {
   it("renders resources and can create a web resource", async () => {
     const user = userEvent.setup();
+    const resourceName = "new-web-resource";
     renderPage();
 
     expect(await screen.findByText("OpenAI Agents Cookbook.pdf")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "上传网页" }));
-    await user.type(screen.getByPlaceholderText("https://example.com/article"), "https://example.com/new-article");
-    await user.type(screen.getByPlaceholderText("可选，便于后续辨识"), "新的网页资源");
+    fireEvent.change(screen.getByPlaceholderText("https://example.com/article"), {
+      target: { value: "https://example.com/new-article" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("可选，便于后续辨识"), {
+      target: { value: resourceName },
+    });
     await user.click(screen.getByRole("button", { name: "创建网页资源" }));
 
-    await waitFor(() => expect(screen.getByText("新的网页资源")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(resourceName)).toBeInTheDocument());
   });
 });
