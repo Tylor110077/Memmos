@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ToastProvider } from "@/components/feedback/ToastProvider";
 import { ResourceGraphPage } from "@/pages/ResourceGraphPage";
 
@@ -25,6 +25,24 @@ function renderPage() {
 }
 
 describe("ResourceGraphPage", () => {
+  const storage = new Map<string, string>();
+
+  beforeEach(() => {
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      value: {
+        getItem: (key: string) => storage.get(key) ?? null,
+        setItem: (key: string, value: string) => {
+          storage.set(key, value);
+        },
+      },
+    });
+  });
+
+  afterEach(() => {
+    storage.clear();
+  });
+
   it("renders chat history and streams a follow-up question", async () => {
     const user = userEvent.setup();
     renderPage();
@@ -54,5 +72,13 @@ describe("ResourceGraphPage", () => {
     await user.clear(screen.getByPlaceholderText("搜索节点名称、描述或意义"));
 
     expect(await screen.findByText("Agent 执行循环", { selector: "h5" })).toBeInTheDocument();
+  });
+
+  it("restores the last conversation id from local storage", async () => {
+    storage.set("goaipj-conversation-sessions", JSON.stringify({ "grp_agent:res_cookbook": "conv_loop" }));
+
+    renderPage();
+
+    expect(await screen.findByText("它和工具调用节点是什么关系？")).toBeInTheDocument();
   });
 });

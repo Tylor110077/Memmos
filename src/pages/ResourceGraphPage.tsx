@@ -11,6 +11,7 @@ import { useConversation, useCreateConversation, useStreamMessage } from "@/hook
 import { useExpandNode, useNodeDetail, useResourceGraph } from "@/hooks/useGraphs";
 import { useGroupEvents } from "@/hooks/useGroupEvents";
 import { useGroupSidebar } from "@/hooks/useGroupSidebar";
+import { clearConversationSession, persistConversationSession, readConversationSession } from "@/hooks/useConversationSession";
 import { useTrackRecentGroup } from "@/hooks/useRecentGroups";
 import { useResourceDetail } from "@/hooks/useResources";
 import { useGraphWorkbenchStore } from "@/store/graphWorkbench";
@@ -29,7 +30,12 @@ const nodeTypeLabels: Record<NodeType, string> = {
 export function ResourceGraphPage() {
   const { groupId = "", resourceId = "" } = useParams();
   const [draft, setDraft] = useState("");
-  const [conversationId, setConversationId] = useState<string>(import.meta.env.VITE_API_MODE === "live" ? "" : "conv_loop");
+  const [conversationId, setConversationId] = useState<string>(() => {
+    if (!groupId || !resourceId) {
+      return import.meta.env.VITE_API_MODE === "live" ? "" : "conv_loop";
+    }
+    return readConversationSession(groupId, resourceId) || (import.meta.env.VITE_API_MODE === "live" ? "" : "conv_loop");
+  });
   const [pendingUserMessage, setPendingUserMessage] = useState<ConversationMessage | null>(null);
   const [streamingMessage, setStreamingMessage] = useState<ConversationMessage | null>(null);
   const { pushToast } = useToast();
@@ -75,8 +81,42 @@ export function ResourceGraphPage() {
   const streamMessage = useStreamMessage(conversationId);
 
   useEffect(() => {
+    const restored = groupId && resourceId ? readConversationSession(groupId, resourceId) : "";
+    if (restored && restored !== conversationId) {
+      setConversationId(restored);
+      return;
+    }
+
+    if (!restored && import.meta.env.VITE_API_MODE !== "live" && conversationId !== "conv_loop") {
+      setConversationId("conv_loop");
+    }
+  }, [conversationId, groupId, resourceId]);
+
+  useEffect(() => {
     return () => reset();
   }, [reset]);
+
+  useEffect(() => {
+    if (!groupId || !resourceId || !conversationId) {
+      return;
+    }
+
+    persistConversationSession(groupId, resourceId, conversationId);
+  }, [conversationId, groupId, resourceId]);
+
+  useEffect(() => {
+    if (!conversationId || !conversationQuery.error || !groupId || !resourceId) {
+      return;
+    }
+
+    clearConversationSession(groupId, resourceId);
+    setConversationId(import.meta.env.VITE_API_MODE === "live" ? "" : "conv_loop");
+    pushToast({
+      title: "历史对话不可用",
+      description: "已清理失效会话，并为当前图谱重建新的对话上下文。",
+      tone: "error",
+    });
+  }, [conversationId, conversationQuery.error, groupId, pushToast, resourceId]);
 
   useEffect(() => {
     const visibleIds = new Set(filteredGraph?.nodes.map((node) => node.id) ?? []);
@@ -108,6 +148,7 @@ export function ResourceGraphPage() {
       title: nodeDetailQuery.data?.name,
     });
     setConversationId(conversation.id);
+    persistConversationSession(groupId, resourceId, conversation.id);
     return conversation.id;
   }
 
