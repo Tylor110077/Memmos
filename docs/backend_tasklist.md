@@ -72,6 +72,7 @@ MVP 至少需要满足：
 
 - 优先级：P0
 - 标签：`MVP`
+- 状态：`已完成`（2026-03-06）
 - 目标：提供本地开发依赖，包含 PostgreSQL、Redis、MinIO、Tika。
 - 细项：
   - 编写 `docker-compose`。
@@ -85,6 +86,7 @@ MVP 至少需要满足：
 
 - 优先级：P0
 - 标签：`MVP`
+- 状态：`已完成`（2026-03-06）
 - 目标：引入迁移工具并建立首个版本。
 - 细项：
   - 建立迁移目录。
@@ -97,6 +99,7 @@ MVP 至少需要满足：
 
 - 优先级：P0
 - 标签：`MVP`
+- 状态：`已完成`（2026-03-06）
 - 目标：建立 `groups/resources/resource_artifacts/resource_chunks/graphs/graph_nodes/graph_edges/node_examples/conversations/conversation_messages/processing_jobs/job_events`。
 - 细项：
   - 设置主键、外键、索引、唯一约束。
@@ -110,6 +113,7 @@ MVP 至少需要满足：
 
 - 优先级：P0
 - 标签：`MVP`
+- 状态：`已完成`（2026-03-06）
 - 目标：为高频表建立 `sqlc` 查询与仓储接口。
 - 细项：
   - `groups` CRUD。
@@ -124,6 +128,7 @@ MVP 至少需要满足：
 
 - 优先级：P1
 - 标签：`MVP`
+- 状态：`已完成`（2026-03-06）
 - 目标：提供跨多个表更新时的事务封装。
 - 适用场景：
   - 资源创建 + 任务创建。

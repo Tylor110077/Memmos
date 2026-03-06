@@ -1,0 +1,18 @@
+version: "2"
+sql:
+  - engine: "postgresql"
+    schema:
+      - "sql/schema/schema.sql"
+    queries:
+      - "sql/queries/groups.sql"
+      - "sql/queries/resources.sql"
+      - "sql/queries/graphs.sql"
+      - "sql/queries/jobs.sql"
+    gen:
+      go:
+        package: "gen"
+        out: "internal/infra/sqlstore/gen"
+        sql_package: "database/sql"
+        emit_json_tags: true
+        emit_interface: false
+        emit_exact_table_names: false

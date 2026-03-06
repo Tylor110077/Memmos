@@ -1,0 +1,13 @@
+drop table if exists job_events;
+drop table if exists processing_jobs;
+drop table if exists conversation_messages;
+drop table if exists conversations;
+drop table if exists node_examples;
+drop table if exists graph_edges;
+drop table if exists graph_nodes;
+drop table if exists graphs;
+drop table if exists resource_chunks;
+drop table if exists resource_artifacts;
+drop table if exists resources;
+drop table if exists groups;
+drop extension if exists vector;
