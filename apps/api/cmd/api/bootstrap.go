@@ -48,6 +48,7 @@ func newDevelopmentServer(logger *log.Logger) http.Handler {
 		JobService:         appjob.NewService(appjob.NewInMemoryRepository()),
 		Logger:             logger,
 		Metrics:            monitoring.NewMetrics(),
+		ResourceGraphGenerator: pipelinegraph.NewGenerator(),
 		ResourceService:    resourceService,
 	})
 }

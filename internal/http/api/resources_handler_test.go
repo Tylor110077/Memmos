@@ -35,6 +35,7 @@ func TestResourceEndpoints(t *testing.T) {
 	server := NewServer(Dependencies{
 		GroupService:    groupService,
 		GraphService:    graphService,
+		ResourceGraphGenerator: pipelinegraph.NewGenerator(),
 		ResourceService: resourceService,
 	})
 
@@ -80,6 +81,20 @@ func TestResourceEndpoints(t *testing.T) {
 	getResp := performJSONRequest(t, server, http.MethodGet, "/api/v1/groups/"+group.ID+"/resources/"+created.Resource.ID, nil)
 	if getResp.Code != http.StatusOK {
 		t.Fatalf("get status = %d", getResp.Code)
+	}
+
+	freshGraphResp := performJSONRequest(t, server, http.MethodGet, "/api/v1/resources/"+webCreated.Resource.ID+"/graph", nil)
+	if freshGraphResp.Code != http.StatusOK {
+		t.Fatalf("fresh graph status = %d body=%s", freshGraphResp.Code, freshGraphResp.Body.String())
+	}
+
+	var freshGraph graphResponse
+	decodeJSONResponse(t, freshGraphResp, &freshGraph)
+	if freshGraph.Graph.ResourceID != webCreated.Resource.ID {
+		t.Fatalf("fresh graph resource_id = %q, want %q", freshGraph.Graph.ResourceID, webCreated.Resource.ID)
+	}
+	if len(freshGraph.Nodes) == 0 {
+		t.Fatalf("expected fresh graph nodes")
 	}
 
 	if _, err := graphService.SaveResourceGraph(context.Background(), appgraph.SaveInput{

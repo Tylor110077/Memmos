@@ -40,6 +40,7 @@ type Dependencies struct {
 	JobService         *appjob.Service
 	Metrics            *monitoring.Metrics
 	Readiness          []DependencyCheck
+	ResourceGraphGenerator resourceGraphGenerator
 	ResourceService    *appresource.Service
 	Logger             *log.Logger
 }
@@ -54,6 +55,7 @@ type Server struct {
 	jobService         *appjob.Service
 	metrics            *monitoring.Metrics
 	readiness          []DependencyCheck
+	resourceGraphGenerator resourceGraphGenerator
 	resourceService    *appresource.Service
 	logger             *log.Logger
 }
@@ -227,6 +229,10 @@ type frameworkGraphGenerator interface {
 	Generate(documents []pipelinegraph.Document) (pipelinegraph.Document, error)
 }
 
+type resourceGraphGenerator interface {
+	Generate(input pipelinegraph.Input) (pipelinegraph.Document, error)
+}
+
 func NewServer(deps Dependencies) http.Handler {
 	eventBroker := deps.EventBroker
 	if eventBroker == nil {
@@ -242,6 +248,7 @@ func NewServer(deps Dependencies) http.Handler {
 		jobService:         deps.JobService,
 		metrics:            deps.Metrics,
 		readiness:          deps.Readiness,
+		resourceGraphGenerator: deps.ResourceGraphGenerator,
 		resourceService:    deps.ResourceService,
 		logger:             deps.Logger,
 	}
@@ -758,8 +765,11 @@ func (s *Server) handleGetResourceGraph(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	if graph.Graph.ID == "" {
-		writeError(w, r, apperror.New(apperror.CodeNotFound, "graph not found"))
-		return
+		graph, err = s.generateResourceGraphOnDemand(r.Context(), resourceID)
+		if err != nil || graph.Graph.ID == "" {
+			writeError(w, r, apperror.New(apperror.CodeNotFound, "graph not found"))
+			return
+		}
 	}
 	writeJSON(w, http.StatusOK, toGraphResponse(graph))
 }
@@ -1185,6 +1195,77 @@ func (s *Server) failFrameworkJob(ctx context.Context, jobID string, err error) 
 		return
 	}
 	_, _ = s.jobService.MarkFailed(ctx, jobID, err.Error())
+}
+
+func (s *Server) generateResourceGraphOnDemand(ctx context.Context, resourceID string) (appgraph.SavedGraph, error) {
+	if s.resourceService == nil || s.graphService == nil || s.resourceGraphGenerator == nil {
+		return appgraph.SavedGraph{}, apperror.New(apperror.CodeNotFound, "graph not found")
+	}
+	resource, err := s.resourceService.GetResourceByID(ctx, resourceID)
+	if err != nil {
+		return appgraph.SavedGraph{}, err
+	}
+	s.advanceResourceStatusForGraph(ctx, resource)
+	document, err := s.resourceGraphGenerator.Generate(pipelinegraph.Input{
+		Title:    resource.Name,
+		Summary:  resourceSummary(resource),
+		Markdown: resourceMarkdown(resource),
+	})
+	if err != nil {
+		return appgraph.SavedGraph{}, err
+	}
+	saved, err := s.graphService.SaveResourceGraph(ctx, appgraph.SaveInput{
+		GroupID:    resource.GroupID,
+		ResourceID: resource.ID,
+		Title:      resource.Name,
+		Document:   document,
+	})
+	if err != nil {
+		return appgraph.SavedGraph{}, err
+	}
+	if _, err := s.resourceService.UpdateStatus(ctx, resource.ID, domainresource.StatusCompleted); err == nil {
+		s.publishGroupEvent(ctx, infraevent.Envelope{
+			Name:    infraevent.NameResourceCompleted,
+			GroupID: resource.GroupID,
+			Payload: map[string]any{
+				"resource_id": resource.ID,
+				"graph_id":    saved.Graph.ID,
+			},
+		})
+	}
+	return saved, nil
+}
+
+func (s *Server) advanceResourceStatusForGraph(ctx context.Context, resource appresource.Resource) {
+	steps := []domainresource.Status{
+		domainresource.StatusParsing,
+		domainresource.StatusNormalizing,
+		domainresource.StatusGraphGenerating,
+	}
+	for _, next := range steps {
+		if resource.Status == next {
+			continue
+		}
+		updated, err := s.resourceService.UpdateStatus(ctx, resource.ID, next)
+		if err != nil {
+			continue
+		}
+		resource = updated
+	}
+}
+
+func resourceSummary(resource appresource.Resource) string {
+	if resource.SourceURL != "" {
+		return resource.SourceURL
+	}
+	return resource.Name
+}
+
+func resourceMarkdown(resource appresource.Resource) string {
+	if resource.SourceURL != "" {
+		return "# " + resource.Name + "\n\n" + resource.SourceURL
+	}
+	return "# " + resource.Name
 }
 
 func (s *Server) writeConversationStream(w http.ResponseWriter, result appchat.AskResult) {
