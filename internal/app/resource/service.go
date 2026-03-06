@@ -220,6 +220,34 @@ func (s *Service) RetryResource(ctx context.Context, resourceID string) (Resourc
 	return ResourceWithJob{Resource: toDTO(*item), Job: job}, nil
 }
 
+func (s *Service) UpdateStatus(ctx context.Context, resourceID string, next domainresource.Status) (Resource, error) {
+	item, err := s.repo.Get(ctx, resourceID)
+	if err != nil {
+		return Resource{}, apperror.New(apperror.CodeNotFound, "resource not found")
+	}
+	if err := item.MoveTo(next, domainresource.Failure{}); err != nil {
+		return Resource{}, apperror.Wrap(apperror.CodeInvalidArgument, "invalid resource status transition", err)
+	}
+	if err := s.repo.Update(ctx, *item); err != nil {
+		return Resource{}, apperror.Wrap(apperror.CodeInternal, "update resource", err)
+	}
+	return toDTO(*item), nil
+}
+
+func (s *Service) FailResource(ctx context.Context, resourceID string, stage domainresource.Status, message string) (Resource, error) {
+	item, err := s.repo.Get(ctx, resourceID)
+	if err != nil {
+		return Resource{}, apperror.New(apperror.CodeNotFound, "resource not found")
+	}
+	if err := item.MoveTo(domainresource.StatusFailed, domainresource.Failure{Stage: stage, Message: message}); err != nil {
+		return Resource{}, apperror.Wrap(apperror.CodeInvalidArgument, "invalid resource failure transition", err)
+	}
+	if err := s.repo.Update(ctx, *item); err != nil {
+		return Resource{}, apperror.Wrap(apperror.CodeInternal, "update resource", err)
+	}
+	return toDTO(*item), nil
+}
+
 func mapDomainError(err error) error {
 	switch {
 	case errors.Is(err, domainresource.ErrInvalidGroupID),

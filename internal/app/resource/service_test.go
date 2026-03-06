@@ -129,6 +129,52 @@ func TestListGetAndRetryResource(t *testing.T) {
 	}
 }
 
+func TestUpdateProcessingStatusAndFailure(t *testing.T) {
+	groupService := newGroupService(t)
+	repo := NewInMemoryRepository()
+	service := NewService(
+		groupService,
+		repo,
+		NewInMemoryArtifactRepository(),
+		NewInMemoryJobPublisher(),
+		storage.NewStore(newFakeBucketClient(), "test-bucket"),
+	)
+
+	created, err := service.CreateWebResource(context.Background(), CreateWebResourceInput{
+		GroupID: existingGroupID(t, groupService),
+		URL:     "https://example.com/page",
+	})
+	if err != nil {
+		t.Fatalf("CreateWebResource() error = %v", err)
+	}
+
+	for _, next := range []resource.Status{resource.StatusParsing, resource.StatusNormalizing, resource.StatusGraphGenerating, resource.StatusCompleted} {
+		updated, err := service.UpdateStatus(context.Background(), created.Resource.ID, next)
+		if err != nil {
+			t.Fatalf("UpdateStatus(%s) error = %v", next, err)
+		}
+		if updated.Status != next {
+			t.Fatalf("status = %s, want %s", updated.Status, next)
+		}
+	}
+
+	retried, err := service.RetryResource(context.Background(), created.Resource.ID)
+	if err != nil {
+		t.Fatalf("RetryResource() error = %v", err)
+	}
+
+	failed, err := service.FailResource(context.Background(), retried.Resource.ID, resource.StatusParsing, "fetch timeout")
+	if err != nil {
+		t.Fatalf("FailResource() error = %v", err)
+	}
+	if failed.Status != resource.StatusFailed {
+		t.Fatalf("status = %s, want failed", failed.Status)
+	}
+	if failed.ErrorMessage != "fetch timeout" {
+		t.Fatalf("error = %q, want fetch timeout", failed.ErrorMessage)
+	}
+}
+
 func newGroupService(t *testing.T) *appgroup.Service {
 	t.Helper()
 	repo := appgroup.NewInMemoryRepository()
