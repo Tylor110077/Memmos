@@ -5,7 +5,7 @@ import "@/styles/index.css";
 import "@xyflow/react/dist/style.css";
 
 async function bootstrap() {
-  if (import.meta.env.DEV && import.meta.env.VITE_API_MODE !== "live") {
+  if (import.meta.env.DEV && import.meta.env.VITE_API_MODE === "mock") {
     const { startMockWorker } = await import("@/mocks/browser");
     await startMockWorker();
   }

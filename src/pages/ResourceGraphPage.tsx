@@ -27,14 +27,18 @@ const nodeTypeLabels: Record<NodeType, string> = {
   example: "示例",
 };
 
+function buildMessageSignature(message: ConversationMessage) {
+  return [message.role, message.current_node_id, message.content.trim()].join("::");
+}
+
 export function ResourceGraphPage() {
   const { groupId = "", resourceId = "" } = useParams();
   const [draft, setDraft] = useState("");
   const [conversationId, setConversationId] = useState<string>(() => {
     if (!groupId || !resourceId) {
-      return import.meta.env.VITE_API_MODE === "live" ? "" : "conv_loop";
+      return import.meta.env.VITE_API_MODE === "mock" ? "conv_loop" : "";
     }
-    return readConversationSession(groupId, resourceId) || (import.meta.env.VITE_API_MODE === "live" ? "" : "conv_loop");
+    return readConversationSession(groupId, resourceId) || (import.meta.env.VITE_API_MODE === "mock" ? "conv_loop" : "");
   });
   const [pendingUserMessage, setPendingUserMessage] = useState<ConversationMessage | null>(null);
   const [streamingMessage, setStreamingMessage] = useState<ConversationMessage | null>(null);
@@ -87,7 +91,7 @@ export function ResourceGraphPage() {
       return;
     }
 
-    if (!restored && import.meta.env.VITE_API_MODE !== "live" && conversationId !== "conv_loop") {
+    if (!restored && import.meta.env.VITE_API_MODE === "mock" && conversationId !== "conv_loop") {
       setConversationId("conv_loop");
     }
   }, [conversationId, groupId, resourceId]);
@@ -110,7 +114,7 @@ export function ResourceGraphPage() {
     }
 
     clearConversationSession(groupId, resourceId);
-    setConversationId(import.meta.env.VITE_API_MODE === "live" ? "" : "conv_loop");
+    setConversationId(import.meta.env.VITE_API_MODE === "mock" ? "conv_loop" : "");
     pushToast({
       title: "历史对话不可用",
       description: "已清理失效会话，并为当前图谱重建新的对话上下文。",
@@ -130,11 +134,24 @@ export function ResourceGraphPage() {
     }
   }, [filteredGraph, selectedNodeId, setSelectedNodeId]);
 
-  const messages = [
-    ...(conversationQuery.data?.messages ?? []),
-    ...(pendingUserMessage ? [pendingUserMessage] : []),
-    ...(streamingMessage ? [streamingMessage] : []),
-  ];
+  const messages = useMemo(() => {
+    const baseMessages = conversationQuery.data?.messages ?? [];
+    const mergedMessages = [...baseMessages];
+    const seenIds = new Set(baseMessages.map((message) => message.id));
+    const seenSignatures = new Set(baseMessages.map(buildMessageSignature));
+
+    if (pendingUserMessage && !seenSignatures.has(buildMessageSignature(pendingUserMessage))) {
+      mergedMessages.push(pendingUserMessage);
+      seenIds.add(pendingUserMessage.id);
+      seenSignatures.add(buildMessageSignature(pendingUserMessage));
+    }
+
+    if (streamingMessage && !seenIds.has(streamingMessage.id) && !seenSignatures.has(buildMessageSignature(streamingMessage))) {
+      mergedMessages.push(streamingMessage);
+    }
+
+    return mergedMessages;
+  }, [conversationQuery.data?.messages, pendingUserMessage, streamingMessage]);
   const resource = resourceQuery.data;
 
   async function ensureConversation() {

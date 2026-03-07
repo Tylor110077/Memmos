@@ -9,7 +9,7 @@ export async function getResources(groupId: string) {
 
 export async function getResourceDetail(resourceId: string, groupId?: string) {
   const path =
-    import.meta.env.VITE_API_MODE === "live" && groupId
+    import.meta.env.VITE_API_MODE !== "mock" && groupId
       ? `/groups/${groupId}/resources/${resourceId}`
       : `/resources/${resourceId}`;
   const response = await apiRequest<ResourceDetail>(path);
@@ -24,7 +24,7 @@ export function uploadResource(groupId: string, file: File, name?: string) {
   }
 
   const path =
-    import.meta.env.VITE_API_MODE === "live" ? `/groups/${groupId}/resources/upload` : `/groups/${groupId}/resources`;
+    import.meta.env.VITE_API_MODE !== "mock" ? `/groups/${groupId}/resources/upload` : `/groups/${groupId}/resources`;
   return apiRequest<ResourceMutationResult>(path, {
     method: "POST",
     body: formData,

@@ -78,6 +78,47 @@ describe("liveAdapters", () => {
     expect(result.edges[0]?.target_node_id).toBe("n1");
   });
 
+  it("deduplicates repeated graph nodes and edges by id", () => {
+    const result = normalizeGraphView({
+      graph: {
+        id: "graph_live",
+        group_id: "grp_live",
+        resource_id: "",
+        title: "Framework",
+        summary: "Overview",
+        version: 1,
+        is_active: true,
+        created_at: "2026-03-07T00:00:00Z",
+        updated_at: "2026-03-07T00:00:00Z",
+      },
+      nodes: [
+        { id: "root_exp_exp", graph_id: "graph_live", name: "Root Exp", type: "topic", level: 1, is_expansion: true },
+        { id: "root_exp_exp", graph_id: "graph_live", name: "Root Exp", type: "topic", level: 1, is_expansion: true },
+      ],
+      edges: [
+        {
+          id: "root_exp_to_root_exp_exp",
+          graph_id: "graph_live",
+          source_id: "root_exp_exp",
+          target_id: "root_exp_exp",
+          relation: "extends",
+          is_expansion: true,
+        },
+        {
+          id: "root_exp_to_root_exp_exp",
+          graph_id: "graph_live",
+          source_id: "root_exp_exp",
+          target_id: "root_exp_exp",
+          relation: "extends",
+          is_expansion: true,
+        },
+      ],
+    });
+
+    expect(result.nodes).toHaveLength(1);
+    expect(result.edges).toHaveLength(1);
+  });
+
   it("normalizes node detail aliases", () => {
     const result = normalizeNodeDetail({
       node: {

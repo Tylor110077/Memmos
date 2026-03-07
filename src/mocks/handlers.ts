@@ -86,6 +86,11 @@ export const handlers = [
     });
   }),
 
+  http.get("/api/v1/groups/:groupId/resources/:resourceId", ({ params }) => {
+    const resource = resources.find((item) => item.id === params.resourceId && item.group_id === params.groupId);
+    return resource ? ok(resource) : fail("RESOURCE_NOT_FOUND", "resource not found", 404);
+  }),
+
   http.post("/api/v1/groups/:groupId/resources", async ({ params, request }) => {
     const formData = await request.formData();
     const file = formData.get("file");

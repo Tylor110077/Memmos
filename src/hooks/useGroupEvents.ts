@@ -81,7 +81,7 @@ export function useGroupEvents(groupId?: string) {
 
   useEffect(() => {
     if (!groupId) return;
-    if (import.meta.env.VITE_API_MODE !== "live") return;
+    if (import.meta.env.VITE_API_MODE === "mock") return;
     if (typeof EventSource === "undefined") return;
 
     return subscribeGroupEvents(groupId, (event, payload) => {

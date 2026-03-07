@@ -2,6 +2,8 @@ import type {
   Conversation,
   ConversationDetail,
   ConversationMessage,
+  GraphEdge,
+  GraphNode,
   GraphView,
   Group,
   GroupDetail,
@@ -14,6 +16,14 @@ import type {
 } from "@/api/types";
 
 type MaybePaginated<T> = Paginated<T> | T[];
+
+function dedupeGraphNodes(items: GraphNode[]) {
+  return Array.from(new Map(items.map((item) => [item.id, item])).values());
+}
+
+function dedupeGraphEdges(items: GraphEdge[]) {
+  return Array.from(new Map(items.map((item) => [item.id, item])).values());
+}
 
 function asResourceType(value: unknown): ResourceType {
   const normalized = typeof value === "string" ? value.toLowerCase() : "md";
@@ -103,7 +113,7 @@ function inferRootNodeId(nodes: any[]) {
 }
 
 export function normalizeGraphView(value: any): GraphView {
-  const nodes = (value.nodes ?? []).map((node: any) => ({
+  const nodes = dedupeGraphNodes((value.nodes ?? []).map((node: any) => ({
     id: node.id,
     graph_id: node.graph_id,
     name: node.name,
@@ -113,7 +123,20 @@ export function normalizeGraphView(value: any): GraphView {
     node_type: node.node_type ?? node.type ?? "topic",
     source_type: node.source_type ?? "summarized",
     is_expansion: node.is_expansion ?? false,
-  }));
+  })));
+
+  const nodeIds = new Set(nodes.map((node) => node.id));
+  const edges = dedupeGraphEdges(
+    (value.edges ?? []).map((edge: any) => ({
+      id: edge.id,
+      graph_id: edge.graph_id,
+      source_node_id: edge.source_node_id ?? edge.source_id,
+      target_node_id: edge.target_node_id ?? edge.target_id,
+      relation_type: edge.relation_type ?? edge.relation ?? "related",
+      relation_description: edge.relation_description ?? null,
+      is_expansion_relation: edge.is_expansion_relation ?? edge.is_expansion ?? false,
+    })),
+  ).filter((edge) => nodeIds.has(edge.source_node_id) && nodeIds.has(edge.target_node_id));
 
   return {
     graph: {
@@ -129,15 +152,7 @@ export function normalizeGraphView(value: any): GraphView {
       updated_at: value.graph.updated_at,
     },
     nodes,
-    edges: (value.edges ?? []).map((edge: any) => ({
-      id: edge.id,
-      graph_id: edge.graph_id,
-      source_node_id: edge.source_node_id ?? edge.source_id,
-      target_node_id: edge.target_node_id ?? edge.target_id,
-      relation_type: edge.relation_type ?? edge.relation ?? "related",
-      relation_description: edge.relation_description ?? null,
-      is_expansion_relation: edge.is_expansion_relation ?? edge.is_expansion ?? false,
-    })),
+    edges,
   };
 }
 

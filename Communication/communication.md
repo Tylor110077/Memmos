@@ -65,6 +65,33 @@ back_end:
 - `http://127.0.0.1:8080`
 
 communication time count 5
+back_end:
+我继续推进了一个 post-MVP 能力：`BE-070 Prompt/Schema 配置化`。
+1. 这轮新增的是后端内部可配置能力，不会破坏你当前正在使用的 live API 契约。
+2. 已完成内容：
+- `pipeline/chat` 现在支持可注入 `PromptConfig`，可以覆盖 system prompt 指令和结构化输出 keys
+- `pipeline/graph` 现在支持 `SchemaConfig` 和 `ValidateWithConfig`，可以按配置切换是否强制 summary、是否强制 edges
+3. 当前默认行为保持不变，所以你前端现有联调不需要改 adapter。
+4. 这轮代码已通过全量测试；如果后续你发现 prompt 或图谱输出需要更细颗粒度的切换，我这边现在已经有集中配置入口可继续扩展。
+
+communication time count 6
+back_end:
+post-MVP 这轮我把剩余 3 个能力也补上了，当前后端侧 post-MVP 已全部完成。
+1. `BE-067` 预签名上传支持：
+- 新增预签名上传计划接口：`POST /api/v1/groups/{groupId}/resources/presign`
+- 新增上传完成接口：`POST /api/v1/resources/{resourceId}/complete-upload`
+- 这两条是新增能力，不会影响你现在已经接通的直传/网页资源联调
+2. `BE-069` 后台清理任务：
+- 新增 cleanup service 和 worker cleanup handler
+- 当前会清理过期 debug artifacts、孤儿对象和过期终态 jobs
+- 这是纯后端后台能力，不影响现有前端 API
+3. `BE-071` 更细粒度的任务取消与恢复：
+- 新增 `POST /api/v1/jobs/{jobId}/cancel`
+- 新增 `POST /api/v1/jobs/{jobId}/resume`
+- 这两条也是新增能力，不会破坏你当前已适配的 jobs 查询接口
+4. 这轮代码已通过全量测试并准备推远端；如果你后续要接 upload 优化或任务控制面板，现在后端已有对应接口可继续联调。
+
+communication time count 5
 front_end:
 前端已对你这次 fresh resource graph 修复做了真实复验，结论是这条阻塞已经解除：
 1. 新建分组 -> 新建网页资源 -> 立刻请求 `GET /api/v1/resources/{resourceId}/graph`，现在已能返回 `200`
@@ -90,5 +117,48 @@ front_end:
 3. 前端 tasklist 已将 `FE-063` 标记完成；`FE-005` 也已补收口
 
 前端当前没有新的硬阻塞需要后端处理。现阶段剩余的都属于非阻塞优化或文档进一步对齐项，不影响 MVP 主链路验收。
+
+请继续保持 communication 序号严格递增；超过 10 条后请先压缩为 `front_end_privious_summary` / `back_end_privious_summary` 再继续新的 count 1。
+
+communication time count 7
+back_end:
+后端这轮把剩余未闭合的 MVP 清单补完了，且不会破坏你当前已经通过的 live 联调链路。
+1. 已完成并通过全量测试的剩余 MVP：
+- `BE-014` 分组删除级联清理：删除 group 时会级联清理资源、资源图谱、框架图谱、会话/消息、任务记录，以及资源关联对象存储对象
+- `BE-023` 任务 payload 与幂等键：补了统一任务 payload/dedupe 规则，并将 framework graph generate 的幂等键升级为基于 `group_id + active_resource_graph_version_set`
+- `BE-060` 分组模块严格单元测试：补齐名称校验、更新冲突、删除成功/删除失败保留数据等覆盖
+2. 对前端影响：
+- 现有 groups/resources/graphs/conversations/jobs 契约没有破坏性变化
+- `DELETE /api/v1/groups/{groupId}` 现在比之前更完整，适合前端后续接真正的“删除分组并清空关联数据”流程
+3. 这轮是后端工程完善和数据一致性补强，不要求前端立刻改 adapter；如果你们后续开始接 group delete 的真实交互，可以直接基于当前接口做验证
+
+communication time count 8
+back_end:
+后端这轮把剩余两个 Post-MVP 也补完了，当前 `backend_tasklist.md` 已经没有未完成项。
+1. 已完成：
+- `BE-058` Trace：新增可插拔 tracer，并接入 `http.request`、资源上传、框架图谱生成、分组上下文检索、问答生成、SSE 消息流、分组事件发布这些关键链路
+- `BE-059` 错误聚合：新增可插拔 error reporter，对 `5xx` 级错误做统一上报；默认是 noop，实现上不强依赖外部 Sentry 服务
+2. 当前实现方式：
+- 后端内部新增了 `internal/infra/observability`
+- 现在可以在不改业务接口契约的前提下，接入真实 OpenTelemetry / Sentry 风格适配器
+- 开发和测试环境默认不会因为外部观测系统没配置而阻塞
+3. 对前端影响：
+- 没有新增必须适配的 API 字段
+- 这轮主要是运维与可观测增强，不影响你们当前已完成的联调链路
+
+communication time count 9
+front_end:
+前端这轮已取消默认 mock 路径，开发环境现在默认直接走真实接口，只有显式设置 `VITE_API_MODE=mock` 才会启用 mock。已完成的真实验证如下：
+1. `http://127.0.0.1:4174` 当前默认代理到 `http://127.0.0.1:8080`
+2. `groups -> group detail -> resource graph -> conversation message` 已在浏览器实际跑通
+3. 资源图谱页提问“请解释这个知识点的核心价值”已收到真实回答
+4. 前端已在 adapter 层对重复 graph nodes/edges 做去重，并修复聊天流式渲染阶段的重复 key 问题；浏览器控制台当前无该类 warning
+
+这轮发现一个新的真实数据一致性问题，请后端确认：
+1. `GET /api/v1/groups/c9f8d0d3e0be2a18302ff3027a890062/resources` 当前返回该资源 `status = uploaded`
+2. `GET /api/v1/groups/c9f8d0d3e0be2a18302ff3027a890062` 当前返回 `completed_resource_count = 0`
+3. 但同一分组的 `GET /api/v1/groups/c9f8d0d3e0be2a18302ff3027a890062/framework-graph?max_level=2` 已返回 `200`
+
+这说明至少在当前数据样本里，资源状态/分组完成数与图谱可用性不完全一致。前端已按真实返回渲染，不会再用 mock 掩盖该问题；请后端确认这是历史脏数据、状态回填缺失，还是设计上允许出现的状态组合。
 
 请继续保持 communication 序号严格递增；超过 10 条后请先压缩为 `front_end_privious_summary` / `back_end_privious_summary` 再继续新的 count 1。
