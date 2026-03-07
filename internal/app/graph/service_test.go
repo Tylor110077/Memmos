@@ -1,0 +1,201 @@
+package graph
+
+import (
+	"context"
+	"testing"
+
+	pipelinegraph "github.com/tylor/goaipj/internal/pipeline/graph"
+)
+
+func TestPersistArchivesPreviousActiveGraph(t *testing.T) {
+	repo := NewInMemoryRepository()
+	service := NewService(repo)
+	ctx := context.Background()
+
+	first, err := service.SaveResourceGraph(ctx, SaveInput{
+		GroupID:    "group-1",
+		ResourceID: "resource-1",
+		Title:      "First",
+		Document: pipelinegraph.Document{
+			Summary: "summary",
+			Nodes: []pipelinegraph.Node{
+				{ID: "root", Name: "Root", Type: "topic", Level: 0},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("SaveResourceGraph(first) error = %v", err)
+	}
+
+	second, err := service.SaveResourceGraph(ctx, SaveInput{
+		GroupID:    "group-1",
+		ResourceID: "resource-1",
+		Title:      "Second",
+		Document: pipelinegraph.Document{
+			Summary: "summary",
+			Nodes: []pipelinegraph.Node{
+				{ID: "root2", Name: "Root 2", Type: "topic", Level: 0},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("SaveResourceGraph(second) error = %v", err)
+	}
+
+	storedFirst, ok := repo.GetByID(first.Graph.ID)
+	if !ok {
+		t.Fatalf("first graph not found in repo")
+	}
+	if storedFirst.Graph.IsActive {
+		t.Fatalf("first graph should have been archived")
+	}
+	if !second.Graph.IsActive {
+		t.Fatalf("second graph should be active")
+	}
+	if second.Graph.Version != 2 {
+		t.Fatalf("version = %d, want 2", second.Graph.Version)
+	}
+}
+
+func TestGetResourceGraphFiltersByLevel(t *testing.T) {
+	repo := NewInMemoryRepository()
+	service := NewService(repo)
+	ctx := context.Background()
+
+	saved, err := service.SaveResourceGraph(ctx, SaveInput{
+		GroupID:    "group-1",
+		ResourceID: "resource-1",
+		Title:      "Graph",
+		Document: pipelinegraph.Document{
+			Summary: "summary",
+			Nodes: []pipelinegraph.Node{
+				{ID: "root", Name: "Root", Type: "topic", Level: 0},
+				{ID: "n1", Name: "Child", Type: "concept", Level: 1},
+				{ID: "n2", Name: "Deep", Type: "concept", Level: 2},
+			},
+			Edges: []pipelinegraph.Edge{
+				{ID: "e1", SourceID: "root", TargetID: "n1", Relation: "contains"},
+				{ID: "e2", SourceID: "n1", TargetID: "n2", Relation: "contains"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("SaveResourceGraph() error = %v", err)
+	}
+
+	got, err := service.GetResourceGraph(ctx, saved.Graph.ResourceID, QueryOptions{MaxLevel: 1})
+	if err != nil {
+		t.Fatalf("GetResourceGraph() error = %v", err)
+	}
+	if len(got.Nodes) != 2 {
+		t.Fatalf("nodes = %d, want 2", len(got.Nodes))
+	}
+	if len(got.Edges) != 1 {
+		t.Fatalf("edges = %d, want 1", len(got.Edges))
+	}
+}
+
+func TestGetNodeNeighborsReturnsOneHopRelations(t *testing.T) {
+	repo := NewInMemoryRepository()
+	service := NewService(repo)
+	ctx := context.Background()
+
+	saved, err := service.SaveResourceGraph(ctx, SaveInput{
+		GroupID:    "group-1",
+		ResourceID: "resource-1",
+		Title:      "Graph",
+		Document: pipelinegraph.Document{
+			Summary: "summary",
+			Nodes: []pipelinegraph.Node{
+				{ID: "root", Name: "Root", Type: "topic", Level: 0},
+				{ID: "child", Name: "Child", Type: "concept", Level: 1},
+				{ID: "peer", Name: "Peer", Type: "concept", Level: 1},
+			},
+			Edges: []pipelinegraph.Edge{
+				{ID: "e1", SourceID: "root", TargetID: "child", Relation: "contains"},
+				{ID: "e2", SourceID: "peer", TargetID: "root", Relation: "supports"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("SaveResourceGraph() error = %v", err)
+	}
+
+	neighbors, err := service.GetNodeNeighbors(ctx, saved.Graph.ID, "root")
+	if err != nil {
+		t.Fatalf("GetNodeNeighbors() error = %v", err)
+	}
+	if len(neighbors) != 2 {
+		t.Fatalf("neighbors = %d, want 2", len(neighbors))
+	}
+}
+
+func TestDeleteResourceGraphsRemovesAllVersions(t *testing.T) {
+	repo := NewInMemoryRepository()
+	service := NewService(repo)
+	ctx := context.Background()
+
+	for _, title := range []string{"First", "Second"} {
+		if _, err := service.SaveResourceGraph(ctx, SaveInput{
+			GroupID:    "group-1",
+			ResourceID: "resource-1",
+			Title:      title,
+			Document: pipelinegraph.Document{
+				Summary: "summary",
+				Nodes: []pipelinegraph.Node{
+					{ID: title, Name: title, Type: "topic", Level: 0},
+				},
+			},
+		}); err != nil {
+			t.Fatalf("SaveResourceGraph(%s) error = %v", title, err)
+		}
+	}
+
+	if err := service.DeleteResourceGraphs(ctx, "resource-1"); err != nil {
+		t.Fatalf("DeleteResourceGraphs() error = %v", err)
+	}
+
+	got, err := service.GetResourceGraph(ctx, "resource-1", QueryOptions{IncludeExpansion: true})
+	if err != nil {
+		t.Fatalf("GetResourceGraph() error = %v", err)
+	}
+	if got.Graph.ID != "" {
+		t.Fatalf("expected graph to be removed, got %q", got.Graph.ID)
+	}
+}
+
+func TestListResourceGraphVersionsReturnsDescendingHistory(t *testing.T) {
+	repo := NewInMemoryRepository()
+	service := NewService(repo)
+	ctx := context.Background()
+
+	for _, title := range []string{"Graph 1", "Graph 2", "Graph 3"} {
+		if _, err := service.SaveResourceGraph(ctx, SaveInput{
+			GroupID:    "group-1",
+			ResourceID: "resource-1",
+			Title:      title,
+			Document: pipelinegraph.Document{
+				Summary: title,
+				Nodes: []pipelinegraph.Node{
+					{ID: title, Name: title, Type: "topic", Level: 0},
+				},
+			},
+		}); err != nil {
+			t.Fatalf("SaveResourceGraph(%s) error = %v", title, err)
+		}
+	}
+
+	versions, err := service.ListResourceGraphVersions(ctx, "resource-1")
+	if err != nil {
+		t.Fatalf("ListResourceGraphVersions() error = %v", err)
+	}
+	if len(versions) != 3 {
+		t.Fatalf("versions = %d, want 3", len(versions))
+	}
+	if versions[0].Graph.Version != 3 || !versions[0].Graph.IsActive {
+		t.Fatalf("latest version = %d active=%v", versions[0].Graph.Version, versions[0].Graph.IsActive)
+	}
+	if versions[2].Graph.Version != 1 {
+		t.Fatalf("oldest version = %d, want 1", versions[2].Graph.Version)
+	}
+}

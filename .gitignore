@@ -1,1 +1,12 @@
+.cache/
 .DS_Store
+.playwright-cli/
+AI test/chat-history*.json
+code/
+dist/
+node_modules/
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts
+vitest.config.js
+vitest.config.d.ts
