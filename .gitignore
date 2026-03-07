@@ -1,5 +1,8 @@
 .cache/
 .DS_Store
+.playwright-cli/
+AI test/chat-history*.json
+code/
 dist/
 node_modules/
 *.tsbuildinfo
