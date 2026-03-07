@@ -139,6 +139,76 @@ func TestGroupsIncludeResourceCounts(t *testing.T) {
 	}
 }
 
+func TestGroupsRepairHistoricalResourceStateWhenGraphExists(t *testing.T) {
+	ctx := context.Background()
+	groupService := appgroup.NewService(appgroup.NewInMemoryRepository())
+	group, err := groupService.CreateGroup(ctx, appgroup.CreateGroupInput{Name: "Backend Group"})
+	if err != nil {
+		t.Fatalf("CreateGroup() error = %v", err)
+	}
+
+	resourceRepo := appresource.NewInMemoryRepository()
+	resourceService := appresource.NewService(
+		groupService,
+		resourceRepo,
+		appresource.NewInMemoryArtifactRepository(),
+		appresource.NewInMemoryJobPublisher(),
+		storage.NewStore(newHTTPFakeBucketClient(), "bucket"),
+	)
+	graphService := appgraph.NewService(appgraph.NewInMemoryRepository())
+
+	uploaded, err := domainresource.NewWeb(group.ID, "https://example.com/uploaded")
+	if err != nil {
+		t.Fatalf("NewWeb() error = %v", err)
+	}
+	uploaded.ID = "res-uploaded"
+	if err := resourceRepo.Create(ctx, *uploaded); err != nil {
+		t.Fatalf("resourceRepo.Create() error = %v", err)
+	}
+	if _, err := graphService.SaveResourceGraph(ctx, appgraph.SaveInput{
+		GroupID:    group.ID,
+		ResourceID: uploaded.ID,
+		Title:      uploaded.Name,
+		Document: pipelinegraph.Document{
+			Summary: "historical graph",
+			Nodes: []pipelinegraph.Node{
+				{ID: "root", Name: "Root", Type: "topic", Level: 0},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("SaveResourceGraph() error = %v", err)
+	}
+
+	server := NewServer(Dependencies{
+		GroupService:    groupService,
+		ResourceService: resourceService,
+		GraphService:    graphService,
+	})
+
+	listResp := performJSONRequest(t, server, http.MethodGet, "/api/v1/groups/"+group.ID+"/resources", nil)
+	if listResp.Code != http.StatusOK {
+		t.Fatalf("list status = %d body=%s", listResp.Code, listResp.Body.String())
+	}
+	var resources []resourceResponse
+	decodeJSONResponse(t, listResp, &resources)
+	if len(resources) != 1 {
+		t.Fatalf("len(resources) = %d, want 1", len(resources))
+	}
+	if resources[0].Status != string(domainresource.StatusCompleted) {
+		t.Fatalf("resource status = %q, want completed", resources[0].Status)
+	}
+
+	groupResp := performJSONRequest(t, server, http.MethodGet, "/api/v1/groups/"+group.ID, nil)
+	if groupResp.Code != http.StatusOK {
+		t.Fatalf("group status = %d body=%s", groupResp.Code, groupResp.Body.String())
+	}
+	var got groupResponse
+	decodeJSONResponse(t, groupResp, &got)
+	if got.CompletedResourceCount != 1 {
+		t.Fatalf("completed_resource_count = %d, want 1", got.CompletedResourceCount)
+	}
+}
+
 func TestGroupsValidationAndErrorShape(t *testing.T) {
 	server := newTestServer()
 

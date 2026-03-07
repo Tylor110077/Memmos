@@ -811,6 +811,7 @@ func (s *Server) handleListResources(w http.ResponseWriter, r *http.Request, gro
 	}
 	resp := make([]resourceResponse, 0, len(resources))
 	for _, item := range resources {
+		item = s.reconcileResourceCompletion(r.Context(), item)
 		resp = append(resp, toResourceResponse(item))
 	}
 	writeJSON(w, http.StatusOK, resp)
@@ -822,6 +823,7 @@ func (s *Server) handleGetResource(w http.ResponseWriter, r *http.Request, group
 		writeError(w, r, err)
 		return
 	}
+	item = s.reconcileResourceCompletion(r.Context(), item)
 	writeJSON(w, http.StatusOK, toResourceResponse(item))
 }
 
@@ -1138,6 +1140,7 @@ func (s *Server) toGroupResponse(ctx context.Context, group appgroup.Group) grou
 	}
 	resp.ResourceCount = len(items)
 	for _, item := range items {
+		item = s.reconcileResourceCompletion(ctx, item)
 		if item.Status == domainresource.StatusCompleted {
 			resp.CompletedResourceCount++
 		}
@@ -1409,6 +1412,29 @@ func (s *Server) advanceResourceStatusForGraph(ctx context.Context, resource app
 		}
 		resource = updated
 	}
+}
+
+func (s *Server) reconcileResourceCompletion(ctx context.Context, resource appresource.Resource) appresource.Resource {
+	if s.resourceService == nil || s.graphService == nil {
+		return resource
+	}
+	if resource.Status == domainresource.StatusCompleted {
+		return resource
+	}
+	graph, err := s.graphService.GetResourceGraph(ctx, resource.ID, appgraph.QueryOptions{IncludeExpansion: true})
+	if err != nil || graph.Graph.ID == "" {
+		return resource
+	}
+	s.advanceResourceStatusForGraph(ctx, resource)
+	updated, err := s.resourceService.UpdateStatus(ctx, resource.ID, domainresource.StatusCompleted)
+	if err == nil {
+		return updated
+	}
+	latest, err := s.resourceService.GetResourceByID(ctx, resource.ID)
+	if err == nil {
+		return latest
+	}
+	return resource
 }
 
 func resourceSummary(resource appresource.Resource) string {
